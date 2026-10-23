@@ -1,0 +1,66 @@
+package com.facturacion.api.repository;
+
+import com.facturacion.api.dto.FacturaReporteDTO;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import jakarta.persistence.TypedQuery;
+import org.springframework.stereotype.Repository;
+
+import java.time.LocalDate;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+
+@Repository
+public class FacturaReporteRepository {
+
+    private static final String SELECT_BASE =
+            "SELECT new com.facturacion.api.dto.FacturaReporteDTO(" +
+                    "f.id, f.numero, f.fechaEmision, COALESCE(c.denominacion, 'Consumidor Final'), " +
+                    "ci.denominacion, pv.descripcion, f.importeTotal, f.estado, COUNT(d)) " +
+                    "FROM FacturaVenta f " +
+                    "LEFT JOIN f.cliente c " +
+                    "JOIN f.condicionIva ci " +
+                    "JOIN f.puntoVenta pv " +
+                    "LEFT JOIN f.detalles d " +
+                    "WHERE 1=1 ";
+
+    private static final String GROUP_ORDER =
+            "GROUP BY f.id, f.numero, f.fechaEmision, c.denominacion, ci.denominacion, " +
+                    "pv.descripcion, f.importeTotal, f.estado " +
+                    "ORDER BY f.fechaEmision DESC, f.id DESC";
+
+    @PersistenceContext
+    private EntityManager em;
+
+    public List<FacturaReporteDTO> buscarFacturasFiltradas(
+            LocalDate fechaDesde, LocalDate fechaHasta, String estado, Double montoMinimo) {
+
+        StringBuilder jpql = new StringBuilder(SELECT_BASE);
+        Map<String, Object> params = new HashMap<>();
+
+        if (fechaDesde != null) {
+            jpql.append("AND f.fechaEmision >= :fechaDesde ");
+            params.put("fechaDesde", fechaDesde);
+        }
+        if (fechaHasta != null) {
+            jpql.append("AND f.fechaEmision <= :fechaHasta ");
+            params.put("fechaHasta", fechaHasta);
+        }
+        if (estado != null && !estado.trim().isEmpty()) {
+            jpql.append("AND f.estado = :estado ");
+            params.put("estado", estado.trim().toUpperCase(Locale.ROOT));
+        }
+        if (montoMinimo != null) {
+            jpql.append("AND f.importeTotal >= :montoMinimo ");
+            params.put("montoMinimo", montoMinimo);
+        }
+
+        jpql.append(GROUP_ORDER);
+
+        TypedQuery<FacturaReporteDTO> query = em.createQuery(jpql.toString(), FacturaReporteDTO.class);
+        params.forEach(query::setParameter);
+        return query.getResultList();
+    }
+}

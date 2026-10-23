@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Facturación - Facturas de venta</title>
+  <link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+  <header>
+    <h1>Facturación</h1>
+    <p>Gestión de facturas de venta</p>
+  </header>
+
+  <main>
+    <p id="mensaje" class="mensaje" role="status" hidden></p>
+
+    <section>
+      <h2>1. Buscar comprobantes</h2>
+      <form id="form-filtros">
+        <div class="grilla">
+          <label>Fecha desde <input type="date" id="filtro-desde"></label>
+          <label>Fecha hasta <input type="date" id="filtro-hasta"></label>
+          <label>Estado
+            <select id="filtro-estado">
+              <option value="">Todos</option>
+              <option value="EMITIDA">EMITIDA</option>
+              <option value="PENDIENTE">PENDIENTE</option>
+              <option value="ANULADA">ANULADA</option>
+            </select>
+          </label>
+          <label>Monto mínimo <input type="number" id="filtro-monto" min="0" step="0.01"></label>
+        </div>
+        <div class="acciones">
+          <button type="submit">Buscar</button>
+          <button type="button" id="btn-limpiar" class="secundario">Limpiar</button>
+        </div>
+      </form>
+    </section>
+
+    <section>
+      <h2>2. Nueva factura</h2>
+      <form id="form-factura">
+        <div class="grilla">
+          <label>Cliente (ID, vacío = Consumidor Final) <input type="number" id="cliente-id" min="1"></label>
+          <label>Condición de IVA (ID) <input type="number" id="condicion-iva-id" min="1" value="1" required></label>
+          <label>Punto de venta (ID) <input type="number" id="punto-venta-id" min="1" value="1" required></label>
+          <label>Tipo de moneda (ID) <input type="number" id="tipo-moneda-id" min="1" value="1" required></label>
+          <label>Fecha de emisión <input type="date" id="fecha-emision" required></label>
+          <label>Importe cobrado <input type="number" id="importe-cobrado" min="0" step="0.01" value="0"></label>
+          <label class="ancho">Observaciones <input type="text" id="observaciones"></label>
+        </div>
+
+        <h3>Ítems</h3>
+        <div class="tabla-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Artículo (ID)</th>
+                <th>Cantidad</th>
+                <th>% Bonificación</th>
+                <th>Descripción</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="items-body"></tbody>
+          </table>
+        </div>
+
+        <div class="acciones">
+          <button type="button" id="btn-agregar-item" class="secundario">+ Agregar ítem</button>
+          <button type="submit">Guardar factura</button>
+        </div>
+      </form>
+    </section>
+
+    <section>
+      <h2>3. Comprobantes registrados</h2>
+      <div class="tabla-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>N°</th>
+              <th>Fecha</th>
+              <th>Cliente</th>
+              <th>Cond. IVA</th>
+              <th>Punto de venta</th>
+              <th>Total</th>
+              <th>Estado</th>
+              <th>Ítems</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="facturas-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
