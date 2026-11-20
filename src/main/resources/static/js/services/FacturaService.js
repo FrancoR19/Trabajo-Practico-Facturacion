@@ -1,62 +1,62 @@
-const CABECERAS_JSON = { 'Content-Type': 'application/json' };
+import { API_BASE, conCuerpoJson, solicitar } from './http.js';
 export class FacturaService {
     constructor() {
-        this.baseUrl = 'http://localhost:8080/api/facturas';
+        this.baseUrl = `${API_BASE}/facturas`;
     }
-    async obtenerFacturas(filtros = {}) {
+    construirParametrosFiltro(filtros = {}) {
         const params = new URLSearchParams();
+        if (filtros.numero !== undefined)
+            params.set('numero', String(filtros.numero));
         if (filtros.fechaDesde)
             params.set('fechaDesde', filtros.fechaDesde);
         if (filtros.fechaHasta)
             params.set('fechaHasta', filtros.fechaHasta);
+        if (filtros.cliente)
+            params.set('cliente', filtros.cliente);
+        if (filtros.informadaArca !== undefined)
+            params.set('informadaArca', String(filtros.informadaArca));
         if (filtros.estado)
             params.set('estado', filtros.estado);
         if (filtros.montoMinimo !== undefined)
             params.set('montoMinimo', String(filtros.montoMinimo));
-        const consulta = params.toString();
-        const respuesta = await fetch(consulta ? `${this.baseUrl}?${consulta}` : this.baseUrl);
-        return this.leerJson(respuesta);
+        return params;
+    }
+    async obtenerFacturas(filtros = {}, pagina = 0, tamanio = 5) {
+        const params = this.construirParametrosFiltro(filtros);
+        params.set('page', String(pagina));
+        params.set('size', String(tamanio));
+        return solicitar(`${this.baseUrl}?${params.toString()}`);
+    }
+    urlReporte(tipo, filtros = {}) {
+        const params = this.construirParametrosFiltro(filtros);
+        const query = params.toString();
+        return `${API_BASE}/reportes/${tipo}${query ? `?${query}` : ''}`;
+    }
+    urlPdfFactura(id) {
+        return `${API_BASE}/facturas/${id}/pdf`;
+    }
+    async obtenerFactura(id) {
+        return solicitar(`${this.baseUrl}/${id}`);
     }
     async crearFactura(factura) {
-        const respuesta = await fetch(this.baseUrl, {
-            method: 'POST',
-            headers: CABECERAS_JSON,
-            body: JSON.stringify(factura),
-        });
-        return this.leerJson(respuesta);
+        return solicitar(this.baseUrl, conCuerpoJson('POST', factura));
+    }
+    async actualizarFactura(id, factura) {
+        return solicitar(`${this.baseUrl}/${id}`, conCuerpoJson('PUT', factura));
     }
     async actualizarEstado(id, estado, observaciones) {
         const cuerpo = { estado };
         if (observaciones)
             cuerpo.observaciones = observaciones;
-        const respuesta = await fetch(`${this.baseUrl}/${id}`, {
-            method: 'PUT',
-            headers: CABECERAS_JSON,
-            body: JSON.stringify(cuerpo),
-        });
-        return this.leerJson(respuesta);
+        return solicitar(`${this.baseUrl}/${id}`, conCuerpoJson('PUT', cuerpo));
+    }
+    async cambiarEstado(id) {
+        return solicitar(`${this.baseUrl}/${id}/estado`, { method: 'PATCH' });
+    }
+    async informarArca(id) {
+        return solicitar(`${this.baseUrl}/${id}/informar-arca`, { method: 'POST' });
     }
     async eliminarFactura(id) {
-        const respuesta = await fetch(`${this.baseUrl}/${id}`, { method: 'DELETE' });
-        if (!respuesta.ok) {
-            throw new Error(await this.leerMensajeError(respuesta));
-        }
-    }
-    async leerJson(respuesta) {
-        if (!respuesta.ok) {
-            throw new Error(await this.leerMensajeError(respuesta));
-        }
-        return (await respuesta.json());
-    }
-    async leerMensajeError(respuesta) {
-        try {
-            const error = (await respuesta.json());
-            if (error && typeof error.mensaje === 'string')
-                return error.mensaje;
-        }
-        catch {
-            return `Error ${respuesta.status}`;
-        }
-        return `Error ${respuesta.status}`;
+        return solicitar(`${this.baseUrl}/${id}`, { method: 'DELETE' });
     }
 }

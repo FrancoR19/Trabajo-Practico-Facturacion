@@ -3,12 +3,15 @@ package com.facturacion.api.modelo;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import jakarta.persistence.Temporal;
 import jakarta.persistence.TemporalType;
+import jakarta.persistence.UniqueConstraint;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
@@ -23,7 +26,12 @@ import java.util.Date;
 import java.util.List;
 
 @Entity
-@Table(name = "factura_venta")
+@Table(name = "factura_venta",
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uq_factura_venta_pv_tipo_numero",
+                        columnNames = {"punto_venta_id", "tipo_comprobante", "numero"})
+        })
 @Getter
 @Setter
 @NoArgsConstructor
@@ -34,6 +42,9 @@ import java.util.List;
 public class FacturaVenta extends AuditoriaApp {
 
     private Long numero;
+
+    @Column(name = "tipo_comprobante", nullable = false, length = 5)
+    private String tipoComprobante;
 
     @Column(nullable = false)
     private LocalDate fechaEmision;
@@ -70,13 +81,19 @@ public class FacturaVenta extends AuditoriaApp {
 
     private String motivoRechazo;
 
-    @Column(nullable = false)
-    private String estado;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "estado", nullable = false)
+    private EstadoFactura estado;
 
     @Temporal(TemporalType.TIMESTAMP)
     private Date fechaAnulacion;
 
     private String observaciones;
+
+    private boolean informadaArca;
+
+    @Temporal(TemporalType.TIMESTAMP)
+    private Date fechaInformeArca;
 
     @OneToMany(mappedBy = "factura", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default

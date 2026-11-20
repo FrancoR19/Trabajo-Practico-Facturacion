@@ -1,15 +1,16 @@
 # Facturación - CRUD de Facturas de Venta
 
-API REST con Spring Boot (POST, PUT, DELETE) y frontend en TypeScript + HTML5 para gestionar facturas de venta.
+API REST con Spring Boot y frontend en TypeScript + HTML5 para gestionar facturas de venta.
 Reutiliza el modelo, los DTOs y la consulta JPQL de los TPs anteriores (JPA, JPQL, Lombok y DTOs, Spring Boot).
 
 ## Cómo ejecutarlo
 
-1. Tener Java 17 o superior y MySQL en marcha.
-2. Crear la base vacía: `CREATE DATABASE facturacion_crud_db;`
-3. Poner la contraseña de MySQL en `src/main/resources/application.properties` (`spring.datasource.password`).
-4. Ejecutar `FacturacionApiApplication`. Al arrancar, `DataSeeder` crea las tablas y carga datos de prueba (solo si no hay facturas).
-5. Abrir `http://localhost:8080/` para usar el frontend.
+1. Tener JDK 25 LTS y MySQL en marcha.
+2. Recrear la base para cargar el esquema y los datos de prueba nuevos:
+   `DROP DATABASE IF EXISTS facturacion_crud_db; CREATE DATABASE facturacion_crud_db;`
+3. Poner la contraseña de MySQL en `src/main/resources/application.properties`.
+4. Ejecutar `FacturacionApiApplication`. `DataSeeder` crea las tablas y carga los datos de prueba si no hay facturas.
+5. Abrir `http://localhost:8080/`.
 
 El JavaScript compilado ya está en `src/main/resources/static/js`. Para modificar el TypeScript:
 
@@ -19,48 +20,38 @@ npm install
 npm run build
 ```
 
-## Partes del TP realizadas
+## Correcciones realizadas
 
-| Parte | Consigna | Dónde está |
+| Corrección pedida | Qué se hizo | Dónde |
 |---|---|---|
-| 1 | DTOs de entrada | `dto/FacturaRequestDTO.java`, `dto/FacturaDetalleRequestDTO.java` |
-| 2 | Lógica en `FacturaService` | `service/FacturaService.java` |
-| 2.a | `@Transactional` en las escrituras | `crear`, `actualizar`, `eliminar` |
-| 2.b | Crear: buscar entidades por ID, calcular importes, guardar en cascada | `FacturaService.crear` |
-| 2.c | Actualizar cabecera e ítems | `FacturaService.actualizar` |
-| 2.d | Eliminar / anular | `FacturaService.eliminar` (física) y `actualizar` con estado `ANULADA` (lógica) |
-| 3 | Endpoints REST | `controller/FacturaRestController.java` |
-| 4 | Frontend CRUD | `frontend/` y `src/main/resources/static/` |
-| 5 | Interfaces TypeScript espejo de los DTOs | `frontend/src/models/factura.dto.ts` |
-| 6 | Capa de servicio HTTP | `frontend/src/services/FacturaService.ts` |
-| 7 | Interfaz HTML y lógica de UI | `static/index.html`, `frontend/src/app.ts` |
+| Filtros: N° de factura, fechas, cliente, informada a ARCA | Cinco filtros en el formulario y en la consulta JPQL. El cliente se busca por nombre o CUIT | `FacturaFiltroDTO`, `FacturaReporteRepository`, `index.html`, `app.ts` |
+| Paginación resuelta en el backend | `GET /api/facturas` devuelve una `PaginaDTO` con `COUNT` y `setFirstResult/setMaxResults`. Parámetros `page` (0 por defecto) y `size` (10 por defecto, máximo 100). La grilla tiene Anterior y Siguiente | `PaginaDTO`, `FacturaReporteRepository.buscarPagina`, `app.ts` |
+| Buscar cliente y buscar ListaPrecioArticulo como explorador, sin combos | Ventana con buscador, grilla paginada en el servidor y botón por fila. Una grilla para clientes (selección simple) y otra para listas de precios (selección múltiple) | `Explorador.ts`, `ExploradorRepository`, `CatalogoRestController` (`/api/clientes`, `/api/lista-precio-articulos`) |
+| Bloquear la modificación una vez informada a ARCA | Campo `informadaArca` y `fechaInformeArca`. PUT y DELETE sobre una factura informada devuelven 409 y la interfaz deshabilita todos sus botones | `FacturaVenta`, `FacturaService.validarNoInformada` |
+| Informar a ARCA: guardar y luego informar con un botón aparte | Se eligió la segunda opción. La factura se puede editar cuantas veces se quiera hasta que se informa | `POST /api/facturas/{id}/informar-arca`, botón Informar a ARCA |
+| Botón de editar, impedido si ya fue informada | `GET /api/facturas/{id}` devuelve los datos para cargar el formulario y el guardado usa PUT. Editar queda deshabilitado si está informada o anulada | `FacturaEdicionDTO`, `FacturaService.obtenerParaEdicion`, `app.ts` |
+| Botón que abre el formulario de creación | El formulario está oculto al entrar y se abre con Nueva factura | `index.html`, `app.ts` |
+| Sin ingresar IDs | Condición de IVA, punto de venta y tipo de moneda se eligen por nombre desde listas cargadas del backend. Cliente y artículos se eligen en los exploradores | `CatalogoService`, `/api/catalogos/*` |
+| Seleccionar artículos de la lista sin cargarlos uno por uno | El explorador de listas de precios permite marcar varios y agregarlos juntos | `Explorador.ts` con `multiple: true` |
 
-### Parte 1: DTOs de entrada
-
-- `FacturaRequestDTO`: `clienteId`, `condicionIvaId`, `puntoVentaId`, `tipoMonedaId`, `fechaEmision`, `estado`, `importeCobrado`, `observaciones` y `detalles`.
-- `FacturaDetalleRequestDTO`: `articuloId` o `listaPrecioArticuloId`, `cantidad`, `porcentajeBonificacion` y `descripcion`.
-- Las relaciones se envían solo con IDs, nunca con entidades anidadas.
-
-### Parte 2: servicio
-
-- Crear: valida los datos, busca `PuntoVenta`, `CondicionIva`, `TipoMoneda`, `Cliente` y `ListaPrecioArticulo` por ID (lanza `RecursoNoEncontradoException` si no existen), calcula importes, asigna el número de factura y guarda en cascada los detalles.
-- Cálculo por ítem: `neto = cantidad x precio x (1 - bonificación/100)`, `IVA = neto x alícuota`, `subtotal = neto + IVA`. La factura suma los subtotales y calcula `importeSaldo = total - cobrado`.
-- Actualizar: PUT parcial. Solo se modifican los campos enviados. Si llegan `detalles`, se reemplazan todos los ítems y se recalculan los importes. Si llega `estado` `ANULADA`, se guarda `fechaAnulacion = new Date()`.
-- Eliminar: borrado físico de la factura y sus detalles (cascada).
-- Errores: `exception/GlobalExceptionHandler.java` los convierte en 404, 400 y 409 con el cuerpo `{ "status": ..., "mensaje": "..." }`.
-
-### Parte 3: endpoints (`/api/facturas`)
+## Endpoints
 
 | Método | Ruta | Respuesta |
 |---|---|---|
-| GET | `/api/facturas?fechaDesde&fechaHasta&estado&montoMinimo` | 200 con la lista de `FacturaReporteDTO` |
-| POST | `/api/facturas` | 201 con el `FacturaReporteDTO` creado |
-| PUT | `/api/facturas/{id}` | 200 con el `FacturaReporteDTO` actualizado |
-| DELETE | `/api/facturas/{id}` | 204 sin cuerpo |
+| GET | `/api/facturas?numero&fechaDesde&fechaHasta&cliente&informadaArca&page&size` | 200 con `PaginaDTO<FacturaReporteDTO>` |
+| GET | `/api/facturas/{id}` | 200 con `FacturaEdicionDTO` |
+| POST | `/api/facturas` | 201 con `FacturaReporteDTO` |
+| PUT | `/api/facturas/{id}` | 200 con `FacturaReporteDTO` |
+| POST | `/api/facturas/{id}/informar-arca` | 200 con `FacturaReporteDTO` |
+| DELETE | `/api/facturas/{id}` | 204 |
+| GET | `/api/clientes?texto&page&size` | 200 con `PaginaDTO<ClienteDTO>` |
+| GET | `/api/lista-precio-articulos?texto&page&size` | 200 con `PaginaDTO<ListaPrecioArticuloDTO>` |
+| GET | `/api/catalogos/puntos-venta`, `/condiciones-iva`, `/tipos-moneda` | 200 con lista de `CatalogoItemDTO` |
 
-Otros códigos: 404 si la factura o una entidad asociada no existe, 400 si los datos son inválidos, 409 si se intenta modificar una factura anulada.
+Errores: 404 si no existe el recurso, 400 si los datos son inválidos, 409 si la factura ya fue informada o está anulada. El cuerpo es `{ "status": ..., "mensaje": "..." }`.
+Las opciones `estado` y `montoMinimo` siguen disponibles en el GET, aunque la pantalla ya no las muestra.
 
-Ejemplos de cuerpo:
+Ejemplo de alta:
 
 ```json
 POST /api/facturas
@@ -71,68 +62,48 @@ POST /api/facturas
   "tipoMonedaId": 1,
   "fechaEmision": "2026-10-20",
   "detalles": [
-    { "articuloId": 1, "cantidad": 1 },
-    { "articuloId": 2, "cantidad": 2, "porcentajeBonificacion": 10 }
+    { "listaPrecioArticuloId": 1, "cantidad": 1 },
+    { "listaPrecioArticuloId": 3, "cantidad": 2, "porcentajeBonificacion": 10 }
   ]
 }
 ```
 
-```json
-PUT /api/facturas/1
-{ "estado": "ANULADA", "observaciones": "Error de carga" }
-```
+Para dejar una factura sin cliente al editar se envía `"sinCliente": true`.
 
-```json
-PUT /api/facturas/1
-{ "detalles": [ { "articuloId": 2, "cantidad": 3 } ] }
-```
+## Reglas de negocio
 
-### Partes 4 a 7: frontend
+- Los ítems referencian una entrada de `ListaPrecioArticulo` (artículo dentro de una lista de precios). Se quitó `articuloId` del detalle.
+- Cálculo por ítem: `neto = cantidad x precio x (1 - bonificación/100)`, `IVA = neto x alícuota`, `subtotal = neto + IVA`. El precio se toma de la lista vigente al guardar.
+- Una factura informada a ARCA no se puede editar, anular ni eliminar.
+- Una factura anulada no se puede editar ni informar. Si no está informada, se puede eliminar.
+- Informar a ARCA por ahora solo marca la factura como informada y guarda la fecha. La conexión real con ARCA se implementa en la próxima etapa.
+- El IVA (21%) y el usuario de auditoría (`jperez`) se configuran en `application.properties`.
 
-- `factura.dto.ts`: `FacturaReporteDTO`, `FacturaRequestDTO`, `FacturaDetalleRequestDTO` y `FacturaFiltrosDTO`, con los mismos nombres de campo que los DTOs de Java (`Long` y `double` son `number`, `String` y `LocalDate` son `string`).
-- `FacturaService.ts`: `obtenerFacturas`, `crearFactura`, `actualizarEstado` y `eliminarFactura`, con `async/await` y `fetch` sobre `http://localhost:8080/api/facturas`.
-- `index.html` tiene tres secciones: búsqueda con filtros, alta de factura con tabla dinámica de ítems y listado de comprobantes con botones Anular y Eliminar por fila.
-- `app.ts` mantiene los ítems en memoria, manipula el DOM y conecta los eventos con el servicio.
+## Datos de prueba
 
-## Datos de prueba (base nueva)
-
-| Entidad | IDs |
+| Entidad | Contenido |
 |---|---|
 | Puntos de venta | 1 Sucursal Central, 2 Sucursal Norte |
-| Condiciones de IVA | 1 Responsable Inscripto, 2 Consumidor Final |
-| Tipos de moneda | 1 Peso, 2 Dólar |
-| Clientes | 1 Empresa Tech S.A., 2 Comercial Andina S.R.L. |
-| Artículos | 1 Notebook ($500.000), 2 Mouse ($18.000), 3 Teclado ($55.000) |
-
-Se cargan 3 facturas: la 1 con cliente, la 2 a Consumidor Final y la 3 anulada. La numeración es por punto de venta.
-
-## Decisiones y supuestos
-
-- El detalle acepta `articuloId` (usa la primera lista de precios cargada para ese artículo) o `listaPrecioArticuloId` (usa exactamente esa entrada de precio). Con ambos, se usa `listaPrecioArticuloId`.
-- El IVA es 21% y está en `facturacion.iva-alicuota` (`application.properties`), porque el modelo no guarda la alícuota por artículo.
-- Los campos de auditoría usan el usuario `facturacion.usuario-auditoria` (`jperez`), porque el TP no incluye autenticación.
-- `FacturaReporteDTO` agrega `id` y `estado` respecto de los TPs anteriores, necesarios para que el frontend pueda anular y eliminar por fila.
-- `fechaEmision` pasó de `Date` a `LocalDate`, para que el JSON sea `yyyy-MM-dd` sin depender de la zona horaria.
-- Una factura anulada no puede modificarse (409).
-- Limitaciones: por PUT no se puede volver a dejar una factura sin cliente (un campo ausente significa "sin cambios"), y el número de factura no está protegido contra creaciones simultáneas.
-- Los endpoints de reportes (`/api/reportes/pdf` y `/api/reportes/excel`) vienen del TP anterior y siguen funcionando.
-- `CorsConfig` permite abrir el frontend desde otro puerto de `localhost`.
+| Condiciones de IVA | Responsable Inscripto, Consumidor Final |
+| Clientes | Empresa Tech S.A., Comercial Andina S.R.L. |
+| Listas de precios | General (8 artículos) y Mayorista (4 artículos con 10% menos) |
+| Facturas | 25: la primera informada, la tercera anulada y 5 informadas más, para probar paginación, filtros y bloqueo |
 
 ## Estructura
 
 ```
 src/main/java/com/facturacion/api
   config/       CorsConfig
-  controller/   FacturaRestController, ReporteRestController
-  dto/          FacturaRequestDTO, FacturaDetalleRequestDTO, FacturaReporteDTO, ErrorDTO
+  controller/   FacturaRestController, CatalogoRestController, ReporteRestController
+  dto/          DTOs de entrada, de salida, de paginación y de catálogos
   exception/    RecursoNoEncontradoException, ConflictoNegocioException, GlobalExceptionHandler
   modelo/       entidades JPA con Lombok
-  repository/   repositorios Spring Data y FacturaReporteRepository (JPQL dinámico)
+  repository/   repositorios Spring Data, FacturaReporteRepository y ExploradorRepository
   reportes/     ReporteService (PDF y TSV)
   seed/         DataSeeder
-  service/      FacturaService
+  service/      FacturaService, CatalogoService
 src/main/resources
   application.properties
   static/       index.html, css/, js/ (TypeScript compilado)
-frontend/       código fuente TypeScript y tsconfig
+frontend/src    models/, services/, components/Explorador.ts, app.ts
 ```

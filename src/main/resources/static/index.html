@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="api-base-url" content="http://localhost:8080/api">
   <title>Facturación - Facturas de venta</title>
   <link rel="stylesheet" href="css/estilos.css">
 </head>
@@ -16,20 +17,20 @@
     <p id="mensaje" class="mensaje" role="status" hidden></p>
 
     <section>
-      <h2>1. Buscar comprobantes</h2>
+      <h2>Buscar comprobantes</h2>
       <form id="form-filtros">
         <div class="grilla">
+          <label>N° de factura <input type="number" id="filtro-numero" min="1"></label>
           <label>Fecha desde <input type="date" id="filtro-desde"></label>
           <label>Fecha hasta <input type="date" id="filtro-hasta"></label>
-          <label>Estado
-            <select id="filtro-estado">
-              <option value="">Todos</option>
-              <option value="EMITIDA">EMITIDA</option>
-              <option value="PENDIENTE">PENDIENTE</option>
-              <option value="ANULADA">ANULADA</option>
+          <label>Cliente (nombre o CUIT) <input type="search" id="filtro-cliente"></label>
+          <label>Informada a ARCA
+            <select id="filtro-arca">
+              <option value="">Todas</option>
+              <option value="true">Informadas</option>
+              <option value="false">No informadas</option>
             </select>
           </label>
-          <label>Monto mínimo <input type="number" id="filtro-monto" min="0" step="0.01"></label>
         </div>
         <div class="acciones">
           <button type="submit">Buscar</button>
@@ -38,17 +39,25 @@
       </form>
     </section>
 
-    <section>
-      <h2>2. Nueva factura</h2>
+    <section id="seccion-formulario" hidden>
+      <h2 id="titulo-formulario">Nueva factura</h2>
       <form id="form-factura">
         <div class="grilla">
-          <label>Cliente (ID, vacío = Consumidor Final) <input type="number" id="cliente-id" min="1"></label>
-          <label>Condición de IVA (ID) <input type="number" id="condicion-iva-id" min="1" value="1" required></label>
-          <label>Punto de venta (ID) <input type="number" id="punto-venta-id" min="1" value="1" required></label>
-          <label>Tipo de moneda (ID) <input type="number" id="tipo-moneda-id" min="1" value="1" required></label>
+          <div class="campo ancho">
+            <span class="etiqueta">Cliente</span>
+            <div class="fila-cliente">
+              <input type="text" id="cliente-texto" value="Consumidor Final" readonly>
+              <button type="button" id="btn-buscar-cliente">Buscar cliente</button>
+              <button type="button" id="btn-sin-cliente" class="secundario">Consumidor Final</button>
+            </div>
+          </div>
+          <label>Condición de IVA <select id="condicion-iva" required></select></label>
+          <label>Punto de venta <select id="punto-venta" required></select></label>
+          <label>Tipo de moneda <select id="tipo-moneda" required></select></label>
+          <label>Lista de precios <select id="lista-precio"></select></label>
           <label>Fecha de emisión <input type="date" id="fecha-emision" required></label>
           <label>Importe cobrado <input type="number" id="importe-cobrado" min="0" step="0.01" value="0"></label>
-          <label class="ancho">Observaciones <input type="text" id="observaciones"></label>
+          <label class="ancho">Observaciones <input type="text" id="observaciones" maxlength="500"></label>
         </div>
 
         <h3>Ítems</h3>
@@ -56,43 +65,63 @@
           <table>
             <thead>
               <tr>
-                <th>Artículo (ID)</th>
+                <th>Lista de precios</th>
+                <th>Código</th>
+                <th>Artículo</th>
+                <th>Precio</th>
                 <th>Cantidad</th>
                 <th>% Bonificación</th>
-                <th>Descripción</th>
+                <th>Subtotal neto</th>
                 <th></th>
               </tr>
             </thead>
             <tbody id="items-body"></tbody>
           </table>
         </div>
+        <p id="total-estimado" class="total-estimado"></p>
 
         <div class="acciones">
-          <button type="button" id="btn-agregar-item" class="secundario">+ Agregar ítem</button>
-          <button type="submit">Guardar factura</button>
+          <button type="button" id="btn-agregar-items" class="secundario">+ Agregar ítems</button>
+          <button type="submit" id="btn-guardar">Guardar factura</button>
+          <button type="button" id="btn-cancelar-formulario" class="secundario">Cancelar</button>
         </div>
       </form>
     </section>
 
     <section>
-      <h2>3. Comprobantes registrados</h2>
+      <div class="encabezado-seccion">
+        <h2>Comprobantes registrados</h2>
+        <div class="acciones">
+          <button type="button" id="btn-reporte-pdf" class="secundario">Descargar PDF</button>
+          <button type="button" id="btn-reporte-excel" class="secundario">Descargar Excel (.txt)</button>
+          <button type="button" id="btn-nueva-factura">+ Nueva factura</button>
+        </div>
+      </div>
       <div class="tabla-scroll">
         <table>
           <thead>
             <tr>
               <th>N°</th>
+              <th>Tipo</th>
               <th>Fecha</th>
               <th>Cliente</th>
               <th>Cond. IVA</th>
               <th>Punto de venta</th>
               <th>Total</th>
+              <th>Moneda</th>
               <th>Estado</th>
+              <th>ARCA</th>
               <th>Ítems</th>
               <th>Acciones</th>
             </tr>
           </thead>
           <tbody id="facturas-body"></tbody>
         </table>
+      </div>
+      <div class="paginacion">
+        <button type="button" id="btn-anterior" class="secundario">Anterior</button>
+        <span id="info-paginacion"></span>
+        <button type="button" id="btn-siguiente" class="secundario">Siguiente</button>
       </div>
     </section>
   </main>

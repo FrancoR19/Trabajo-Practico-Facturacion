@@ -1,69 +1,75 @@
 import type {
-  ErrorDTO,
+  FacturaEdicionDTO,
   FacturaFiltrosDTO,
   FacturaReporteDTO,
   FacturaRequestDTO,
+  PaginaDTO,
 } from '../models/factura.dto.js';
-
-const CABECERAS_JSON = { 'Content-Type': 'application/json' };
+import { API_BASE, conCuerpoJson, solicitar } from './http.js';
 
 export class FacturaService {
-  private readonly baseUrl = 'http://localhost:8080/api/facturas';
+  private readonly baseUrl = `${API_BASE}/facturas`;
 
-  async obtenerFacturas(filtros: FacturaFiltrosDTO = {}): Promise<FacturaReporteDTO[]> {
+  construirParametrosFiltro(filtros: FacturaFiltrosDTO = {}): URLSearchParams {
     const params = new URLSearchParams();
+    if (filtros.numero !== undefined) params.set('numero', String(filtros.numero));
     if (filtros.fechaDesde) params.set('fechaDesde', filtros.fechaDesde);
     if (filtros.fechaHasta) params.set('fechaHasta', filtros.fechaHasta);
+    if (filtros.cliente) params.set('cliente', filtros.cliente);
+    if (filtros.informadaArca !== undefined) params.set('informadaArca', String(filtros.informadaArca));
     if (filtros.estado) params.set('estado', filtros.estado);
     if (filtros.montoMinimo !== undefined) params.set('montoMinimo', String(filtros.montoMinimo));
+    return params;
+  }
 
-    const consulta = params.toString();
-    const respuesta = await fetch(consulta ? `${this.baseUrl}?${consulta}` : this.baseUrl);
-    return this.leerJson<FacturaReporteDTO[]>(respuesta);
+  async obtenerFacturas(
+    filtros: FacturaFiltrosDTO = {},
+    pagina = 0,
+    tamanio = 5,
+  ): Promise<PaginaDTO<FacturaReporteDTO>> {
+    const params = this.construirParametrosFiltro(filtros);
+    params.set('page', String(pagina));
+    params.set('size', String(tamanio));
+    return solicitar<PaginaDTO<FacturaReporteDTO>>(`${this.baseUrl}?${params.toString()}`);
+  }
+
+  urlReporte(tipo: 'pdf' | 'excel', filtros: FacturaFiltrosDTO = {}): string {
+    const params = this.construirParametrosFiltro(filtros);
+    const query = params.toString();
+    return `${API_BASE}/reportes/${tipo}${query ? `?${query}` : ''}`;
+  }
+
+  urlPdfFactura(id: number): string {
+    return `${API_BASE}/facturas/${id}/pdf`;
+  }
+
+  async obtenerFactura(id: number): Promise<FacturaEdicionDTO> {
+    return solicitar<FacturaEdicionDTO>(`${this.baseUrl}/${id}`);
   }
 
   async crearFactura(factura: FacturaRequestDTO): Promise<FacturaReporteDTO> {
-    const respuesta = await fetch(this.baseUrl, {
-      method: 'POST',
-      headers: CABECERAS_JSON,
-      body: JSON.stringify(factura),
-    });
-    return this.leerJson<FacturaReporteDTO>(respuesta);
+    return solicitar<FacturaReporteDTO>(this.baseUrl, conCuerpoJson('POST', factura));
+  }
+
+  async actualizarFactura(id: number, factura: FacturaRequestDTO): Promise<FacturaReporteDTO> {
+    return solicitar<FacturaReporteDTO>(`${this.baseUrl}/${id}`, conCuerpoJson('PUT', factura));
   }
 
   async actualizarEstado(id: number, estado: string, observaciones?: string): Promise<FacturaReporteDTO> {
     const cuerpo: FacturaRequestDTO = { estado };
     if (observaciones) cuerpo.observaciones = observaciones;
+    return solicitar<FacturaReporteDTO>(`${this.baseUrl}/${id}`, conCuerpoJson('PUT', cuerpo));
+  }
 
-    const respuesta = await fetch(`${this.baseUrl}/${id}`, {
-      method: 'PUT',
-      headers: CABECERAS_JSON,
-      body: JSON.stringify(cuerpo),
-    });
-    return this.leerJson<FacturaReporteDTO>(respuesta);
+  async cambiarEstado(id: number): Promise<FacturaReporteDTO> {
+    return solicitar<FacturaReporteDTO>(`${this.baseUrl}/${id}/estado`, { method: 'PATCH' });
+  }
+
+  async informarArca(id: number): Promise<FacturaReporteDTO> {
+    return solicitar<FacturaReporteDTO>(`${this.baseUrl}/${id}/informar-arca`, { method: 'POST' });
   }
 
   async eliminarFactura(id: number): Promise<void> {
-    const respuesta = await fetch(`${this.baseUrl}/${id}`, { method: 'DELETE' });
-    if (!respuesta.ok) {
-      throw new Error(await this.leerMensajeError(respuesta));
-    }
-  }
-
-  private async leerJson<T>(respuesta: Response): Promise<T> {
-    if (!respuesta.ok) {
-      throw new Error(await this.leerMensajeError(respuesta));
-    }
-    return (await respuesta.json()) as T;
-  }
-
-  private async leerMensajeError(respuesta: Response): Promise<string> {
-    try {
-      const error = (await respuesta.json()) as ErrorDTO;
-      if (error && typeof error.mensaje === 'string') return error.mensaje;
-    } catch {
-      return `Error ${respuesta.status}`;
-    }
-    return `Error ${respuesta.status}`;
+    return solicitar<void>(`${this.baseUrl}/${id}`, { method: 'DELETE' });
   }
 }
