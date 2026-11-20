@@ -50,7 +50,7 @@ header {
 
 header h1,
 header p {
-  max-width: 1240px;
+  max-width: 1680px;
   margin-left: auto;
   margin-right: auto;
 }
@@ -89,7 +89,7 @@ header p {
 
 
 main {
-  max-width: 1240px;
+  max-width: 1680px;
   margin: 1.75rem auto 3rem;
   padding: 0 1.25rem;
 }
@@ -531,22 +531,95 @@ td[data-subtotal="true"] {
   color: var(--gris-pizarra);
 }
 
+.tabla-comprobantes {
+  font-size: 0.83rem;
+}
+
+.tabla-comprobantes th,
+.tabla-comprobantes td {
+  padding: 0.55rem 0.5rem;
+}
+
+.tabla-comprobantes th {
+  white-space: normal;
+  line-height: 1.2;
+}
+
+.tabla-comprobantes td:nth-child(1),
+.tabla-comprobantes td:nth-child(3),
+.tabla-comprobantes td:nth-child(8),
+.tabla-comprobantes td:nth-child(9),
+.tabla-comprobantes td:nth-child(11) {
+  white-space: nowrap;
+}
+
+.tabla-comprobantes th:nth-child(11),
+.tabla-comprobantes td:nth-child(11) {
+  text-align: center;
+}
+
+.tabla-comprobantes .insignia {
+  padding: 0.18rem 0.45rem;
+  font-size: 0.69rem;
+  gap: 0.28rem;
+}
+
 td.acciones {
+  display: table-cell;
   margin-top: 0;
-  gap: 0.35rem;
-  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+td.acciones button {
+  margin: 0.125rem 0.28rem 0.125rem 0;
+  vertical-align: middle;
+}
+
+td.acciones button:last-child {
+  margin-right: 0;
 }
 
 td button {
-  font-size: 0.76rem;
-  padding: 0.32rem 0.6rem;
-  height: 2rem;
-  gap: 0.35rem;
+  font-size: 0.74rem;
+  padding: 0.28rem 0.52rem;
+  height: 1.9rem;
+  gap: 0.3rem;
 }
 
 td button::before {
-  width: 12px;
-  height: 12px;
+  width: 11px;
+  height: 11px;
+}
+
+@media (max-width: 1420px) {
+  main {
+    padding: 0 0.75rem;
+  }
+
+  section {
+    padding: 1.15rem 1rem;
+  }
+
+  .tabla-comprobantes {
+    font-size: 0.78rem;
+  }
+
+  .tabla-comprobantes th,
+  .tabla-comprobantes td {
+    padding: 0.45rem 0.38rem;
+  }
+
+  td.acciones {
+    white-space: normal;
+    min-width: 225px;
+  }
+
+  td button {
+    font-size: 0.71rem;
+    padding: 0.24rem 0.44rem;
+    height: 1.8rem;
+    gap: 0.25rem;
+  }
 }
 
 td input[type="number"] {
