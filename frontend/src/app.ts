@@ -26,6 +26,8 @@ interface ClienteElegido {
   denominacion: string;
   condicionIvaId?: number;
   condicionIvaDenominacion?: string;
+  listaPrecioId?: number;
+  listaPrecioDenominacion?: string;
 }
 
 const TAMANIO_PAGINA = 5;
@@ -68,7 +70,6 @@ let cliente: ClienteElegido | null = null;
 let facturaEditandoId: number | null = null;
 let paginaActual = 0;
 let filtrosActivos: FacturaFiltrosDTO = {};
-let listasPreciosCatalogo: CatalogoItemDTO[] = [];
 
 function porId<T extends HTMLElement>(id: string): T {
   const elemento = document.getElementById(id);
@@ -106,6 +107,7 @@ const exploradorClientes = new Explorador<ClienteDTO>({
     { titulo: 'CUIT/CUIL', valor: (c) => c.cuitCuil },
     { titulo: 'Denominación', valor: (c) => c.denominacion },
     { titulo: 'Condición IVA', valor: (c) => c.condicionIvaDenominacion || '-' },
+    { titulo: 'Lista de precios', valor: (c) => c.listaPrecioDenominacion || '-' },
   ],
   buscar: (texto, pagina) => catalogos.buscarClientes(texto, pagina),
   id: (c) => c.id,
@@ -113,21 +115,24 @@ const exploradorClientes = new Explorador<ClienteDTO>({
 });
 
 const exploradorPrecios: Explorador<ListaPrecioArticuloDTO> = new Explorador<ListaPrecioArticuloDTO>({
-  titulo: 'Buscar artículos en listas de precios',
-  selector: {
-    titulo: 'Lista de precios',
-    opciones: () => listasPreciosCatalogo.map((lista) => ({ valor: String(lista.id), texto: lista.descripcion })),
-    valorInicial: () => selectListaPrecio.value,
-  },
+  titulo: 'Buscar artículos en lista de precios',
+  subtitulo: () => `Lista de precios aplicada: ${etiquetaListaPrecioSeleccionada()}`,
   columnas: [
-    { titulo: 'Lista', valor: (p) => p.listaPrecio },
     { titulo: 'Código', valor: (p) => p.articuloCodigo },
     { titulo: 'Artículo', valor: (p) => p.articuloDenominacion },
     { titulo: 'Precio', valor: (p) => formatoMoneda.format(p.precioVenta) },
   ],
   buscar: (texto, pagina) => {
-    const valor = exploradorPrecios.valorSelector();
-    const listaPrecioId = valor ? Number(valor) : undefined;
+    const listaPrecioId = selectListaPrecio.value ? Number(selectListaPrecio.value) : undefined;
+    if (!listaPrecioId) {
+      return Promise.resolve({
+        contenido: [],
+        pagina: 0,
+        tamanio: 8,
+        totalElementos: 0,
+        totalPaginas: 0,
+      });
+    }
     return catalogos.buscarListasPrecioArticulo(texto, pagina, listaPrecioId);
   },
   id: (p) => p.id,
@@ -200,9 +205,9 @@ async function cargarCatalogos(): Promise<void> {
   llenarSelect(selectCondicionIva, condicionesIva);
   llenarSelect(selectTipoMoneda, tiposMoneda);
   llenarSelect(selectListaPrecio, listasPrecios);
-  listasPreciosCatalogo = listasPrecios;
 
-  if (!cliente) {
+  fijarTipoMonedaPeso();
+  if (!cliente && facturaEditandoId === null) {
     fijarConsumidorFinal();
   } else {
     actualizarTipoComprobante();
@@ -371,6 +376,119 @@ function actualizarTipoComprobante(): void {
   badgeTipoComprobante.className = `badge-comprobante ${esResponsable ? 'tipo-a' : 'tipo-b'}`;
 }
 
+function fijarTipoMonedaPeso(): void {
+  const opciones = Array.from(selectTipoMoneda.options);
+  const opcionPeso =
+    opciones.find((opcion) => {
+      const texto = opcion.textContent?.trim().toLowerCase() || '';
+      return texto.includes('peso argentino') || texto === 'peso' || texto === 'pes' || texto === 'ars' || texto.includes('peso');
+    }) ?? opciones[0];
+  if (opcionPeso) {
+    selectTipoMoneda.value = opcionPeso.value;
+  }
+  selectTipoMoneda.disabled = true;
+}
+
+function etiquetaListaPrecioSeleccionada(): string {
+  const opcion = selectListaPrecio.selectedOptions[0];
+  return opcion?.textContent?.trim() || '-';
+}
+
+function buscarOpcionListaPorNombre(nombreBuscado: string): HTMLOptionElement | null {
+  const objetivo = nombreBuscado.trim().toLowerCase();
+  const opciones = Array.from(selectListaPrecio.options);
+  return (
+    opciones.find((opcion) => (opcion.textContent?.trim().toLowerCase() || '') === objetivo) ??
+    opciones.find((opcion) => (opcion.textContent?.trim().toLowerCase() || '').includes(objetivo)) ??
+    null
+  );
+}
+
+function seleccionarListaPrecioPorDefecto(
+  listaPrecioId?: number,
+  listaPrecioDenominacion?: string,
+  esEmpresa = false,
+): boolean {
+  const anterior = selectListaPrecio.value;
+  let asignada = false;
+
+  if (listaPrecioId !== undefined && listaPrecioId !== null) {
+    const valor = String(listaPrecioId);
+    const existe = Array.from(selectListaPrecio.options).some((opcion) => opcion.value === valor);
+    if (existe) {
+      selectListaPrecio.value = valor;
+      asignada = true;
+    }
+  }
+
+  if (!asignada && listaPrecioDenominacion) {
+    const opcionPorNombre = buscarOpcionListaPorNombre(listaPrecioDenominacion);
+    if (opcionPorNombre) {
+      selectListaPrecio.value = opcionPorNombre.value;
+      asignada = true;
+    }
+  }
+
+  if (!asignada) {
+    const clavePorDefecto = esEmpresa ? 'mayorista' : 'minorista';
+    const opcionPorTipo = buscarOpcionListaPorNombre(clavePorDefecto) ?? selectListaPrecio.options[0] ?? null;
+    if (opcionPorTipo) {
+      selectListaPrecio.value = opcionPorTipo.value;
+    }
+  }
+
+  selectListaPrecio.disabled = false;
+  return selectListaPrecio.value !== anterior;
+}
+
+async function sincronizarItemsConListaSeleccionada(mostrarAviso = true): Promise<void> {
+  if (items.length === 0 || !selectListaPrecio.value) return;
+
+  const listaId = Number(selectListaPrecio.value);
+  const codigosUnicos = Array.from(new Set(items.map((item) => item.articuloCodigo)));
+  const preciosNuevos = await catalogos.obtenerPreciosPorListaYCodigos(listaId, codigosUnicos);
+  const mapaPorCodigo = new Map<string, ListaPrecioArticuloDTO>();
+  for (const precio of preciosNuevos) {
+    mapaPorCodigo.set(precio.articuloCodigo, precio);
+  }
+
+  const actualizados: ItemFormulario[] = [];
+  const faltantes: string[] = [];
+
+  for (const item of items) {
+    const precioEncontrado = mapaPorCodigo.get(item.articuloCodigo);
+    if (precioEncontrado) {
+      actualizados.push({
+        ...item,
+        listaPrecioArticuloId: precioEncontrado.id,
+        listaPrecio: precioEncontrado.listaPrecio,
+        precioUnitario: precioEncontrado.precioVenta,
+      });
+    } else {
+      faltantes.push(`${item.articuloCodigo} (${item.articuloDenominacion})`);
+    }
+  }
+
+  items = actualizados;
+  renderItems();
+
+  const nombreLista = etiquetaListaPrecioSeleccionada();
+  if (faltantes.length > 0) {
+    mostrarMensaje(
+      `Se quitaron ítems sin precio en ${nombreLista}: ${faltantes.join(', ')}`,
+      'error',
+    );
+  } else if (mostrarAviso) {
+    mostrarMensaje(`Precios actualizados según ${nombreLista}`, 'ok');
+  }
+}
+
+function limpiarResaltadoEdicion(): void {
+  facturasBody.querySelectorAll('tr.editando').forEach((fila) => {
+    fila.classList.remove('editando');
+  });
+}
+
 function fijarConsumidorFinal(): void {
   cliente = null;
   renderCliente();
@@ -380,6 +498,11 @@ function fijarConsumidorFinal(): void {
   }
   selectCondicionIva.disabled = true;
   actualizarTipoComprobante();
+
+  const cambioLista = seleccionarListaPrecioPorDefecto(undefined, 'Lista Minorista', false);
+  if (cambioLista && items.length > 0) {
+    void sincronizarItemsConListaSeleccionada(true).catch((error) => mostrarMensaje(mensajeDe(error), 'error'));
+  }
 }
 
 function crearInputItem(campo: string, indice: number, valor: number, atributos: Record<string, string>): HTMLTableCellElement {
@@ -401,8 +524,8 @@ function renderItems(): void {
 
   if (items.length === 0) {
     const fila = document.createElement('tr');
-    const celda = crearCelda('Todavía no hay ítems. Usá «Agregar ítems» para elegirlos de las listas de precios.');
-    celda.colSpan = 8;
+    const celda = crearCelda('Todavía no hay ítems. Usá «Agregar ítems» para elegirlos de la lista de precios seleccionada.');
+    celda.colSpan = 7;
     fila.append(celda);
     itemsBody.append(fila);
   }
@@ -422,7 +545,6 @@ function renderItems(): void {
 
     const fila = document.createElement('tr');
     fila.append(
-      crearCelda(item.listaPrecio),
       crearCelda(item.articuloCodigo),
       crearCelda(item.articuloDenominacion),
       crearCelda(formatoMoneda.format(item.precioUnitario)),
@@ -446,8 +568,13 @@ function reiniciarFormulario(): void {
   items = [];
   cliente = null;
   facturaEditandoId = null;
+  limpiarResaltadoEdicion();
+  seccionFormulario.classList.remove('modo-edicion');
+  tituloFormulario.textContent = 'Nueva factura';
+  botonGuardar.textContent = 'Guardar factura';
   campoFecha.value = hoy();
   fijarConsumidorFinal();
+  fijarTipoMonedaPeso();
   renderItems();
 }
 
@@ -461,7 +588,6 @@ function abrirFormulario(titulo: string, editando = false): void {
 
 function cerrarFormulario(): void {
   seccionFormulario.hidden = true;
-  seccionFormulario.classList.remove('modo-edicion');
   reiniciarFormulario();
 }
 
@@ -490,14 +616,21 @@ async function editarFactura(id: number): Promise<void> {
     actualizarTipoComprobante();
 
     selectPuntoVenta.value = String(factura.puntoVentaId);
-    selectTipoMoneda.value = String(factura.tipoMonedaId);
+    fijarTipoMonedaPeso();
     campoFecha.value = factura.fechaEmision;
-    campoCobrado.value = String(factura.importeCobrado);
     campoObservaciones.value = factura.observaciones ?? '';
     items = factura.detalles.map((detalle) => ({ ...detalle }));
 
+    const nombreListaDetalles = factura.detalles[0]?.listaPrecio;
+    seleccionarListaPrecioPorDefecto(
+      factura.listaPrecioId ?? undefined,
+      nombreListaDetalles ?? 'Lista Minorista',
+      cliente !== null && esCondicionResponsableInscripto(),
+    );
+
     renderItems();
     actualizarTotales(false);
+    campoCobrado.value = String(factura.importeCobrado);
     abrirFormulario(`EDITAR FACTURA — N° ${factura.numero}`, true);
     void cargarFacturas();
   } catch (error) {
@@ -513,6 +646,8 @@ async function elegirCliente(): Promise<void> {
       denominacion: elegido.denominacion,
       condicionIvaId: elegido.condicionIvaId,
       condicionIvaDenominacion: elegido.condicionIvaDenominacion,
+      listaPrecioId: elegido.listaPrecioId,
+      listaPrecioDenominacion: elegido.listaPrecioDenominacion,
     };
     renderCliente();
     selectCondicionIva.disabled = false;
@@ -532,11 +667,12 @@ async function elegirCliente(): Promise<void> {
         }
       }
     }
-    if (!asignado) {
-      const esEmpresa = elegido.cuitCuil && elegido.cuitCuil.replace(/\D/g, '').startsWith('30');
+    const cuitDigitos = (elegido.cuitCuil || '').replace(/\D/g, '');
+    const esCuitEmpresa = cuitDigitos.startsWith('30') || cuitDigitos.startsWith('33') || cuitDigitos.startsWith('34');
+    if (!asignado && esCuitEmpresa) {
       for (const opcion of Array.from(selectCondicionIva.options)) {
         const texto = opcion.textContent?.trim().toLowerCase() || '';
-        if (esEmpresa && texto.includes('responsable inscripto')) {
+        if (texto.includes('responsable inscripto')) {
           selectCondicionIva.value = opcion.value;
           asignado = true;
           break;
@@ -544,13 +680,33 @@ async function elegirCliente(): Promise<void> {
       }
     }
     actualizarTipoComprobante();
+
+    const esEmpresa = esCuitEmpresa || esCondicionResponsableInscripto();
+    const cambioLista = seleccionarListaPrecioPorDefecto(
+      elegido.listaPrecioId,
+      elegido.listaPrecioDenominacion,
+      esEmpresa,
+    );
+    if (cambioLista && items.length > 0) {
+      try {
+        await sincronizarItemsConListaSeleccionada(true);
+      } catch (error) {
+        mostrarMensaje(mensajeDe(error), 'error');
+      }
+    }
   }
 }
 
 async function agregarItems(): Promise<void> {
+  if (!selectListaPrecio.value) {
+    mostrarMensaje('Seleccioná una lista de precios antes de agregar ítems', 'error');
+    return;
+  }
   const elegidos = await exploradorPrecios.abrir();
   for (const precio of elegidos) {
-    const existente = items.find((item) => item.listaPrecioArticuloId === precio.id);
+    const existente = items.find(
+      (item) => item.listaPrecioArticuloId === precio.id || item.articuloCodigo === precio.articuloCodigo,
+    );
     if (existente) {
       existente.cantidad += 1;
       continue;
@@ -682,6 +838,9 @@ async function anularFactura(id: number, estado?: string, informada?: string, nu
   try {
     const anulada = await facturas.actualizarEstado(id, 'ANULADA', motivo.trim() || undefined);
     mostrarMensaje(`Factura N° ${anulada.numeroFactura} anulada`, 'ok');
+    if (facturaEditandoId === id) {
+      cerrarFormulario();
+    }
     await cargarFacturas();
   } catch (error) {
     mostrarMensaje(mensajeDe(error), 'error');
@@ -694,6 +853,9 @@ async function eliminarFactura(id: number): Promise<void> {
   try {
     await facturas.eliminarFactura(id);
     mostrarMensaje('Factura eliminada', 'ok');
+    if (facturaEditandoId === id) {
+      cerrarFormulario();
+    }
     await cargarFacturas();
   } catch (error) {
     mostrarMensaje(mensajeDe(error), 'error');
@@ -728,6 +890,9 @@ function inicializar(): void {
   });
   selectCondicionIva.addEventListener('change', () => {
     actualizarTipoComprobante();
+  });
+  selectListaPrecio.addEventListener('change', () => {
+    void sincronizarItemsConListaSeleccionada(true).catch((error) => mostrarMensaje(mensajeDe(error), 'error'));
   });
 
   porId<HTMLButtonElement>('btn-cancelar-formulario').addEventListener('click', cerrarFormulario);

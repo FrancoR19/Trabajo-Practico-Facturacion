@@ -214,6 +214,15 @@ input[readonly] {
   cursor: default;
 }
 
+select:disabled {
+  background-color: rgba(201, 208, 214, 0.45);
+  border-color: var(--gris-plateado);
+  color: var(--negro-profundo);
+  font-weight: 600;
+  opacity: 0.85;
+  cursor: not-allowed;
+}
+
 .fila-cliente {
   display: flex;
   gap: 0.5rem;
@@ -794,6 +803,18 @@ dialog.explorador h3 {
 
 .barra-busqueda input {
   flex: 1;
+}
+
+.barra-subtitulo {
+  margin: 0 0 0.85rem;
+  padding: 0.45rem 0.75rem;
+  background-color: rgba(199, 255, 46, 0.25);
+  border-left: 4px solid var(--negro-profundo);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--negro-profundo);
 }
 
 .barra-selector {

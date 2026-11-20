@@ -7,6 +7,13 @@ export class CatalogoService {
         const lista = listaPrecioId !== undefined ? `&listaPrecioId=${listaPrecioId}` : '';
         return solicitar(`${API_BASE}/lista-precio-articulos?${this.parametros(texto, pagina, tamanio)}${lista}`);
     }
+    async obtenerPreciosPorListaYCodigos(listaPrecioId, codigos) {
+        const params = new URLSearchParams({ listaPrecioId: String(listaPrecioId) });
+        for (const codigo of codigos) {
+            params.append('codigos', codigo);
+        }
+        return solicitar(`${API_BASE}/lista-precio-articulos/por-codigos?${params.toString()}`);
+    }
     async listasPrecios() {
         return solicitar(`${API_BASE}/catalogos/listas-precios`);
     }

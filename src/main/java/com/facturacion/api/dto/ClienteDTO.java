@@ -5,9 +5,16 @@ public record ClienteDTO(
         String cuitCuil,
         String denominacion,
         Long condicionIvaId,
-        String condicionIvaDenominacion) {
+        String condicionIvaDenominacion,
+        Long listaPrecioId,
+        String listaPrecioDenominacion) {
 
     public ClienteDTO(Long id, String cuitCuil, String denominacion) {
-        this(id, cuitCuil, denominacion, null, null);
+        this(id, cuitCuil, denominacion, null, null, null, null);
+    }
+
+    public ClienteDTO(Long id, String cuitCuil, String denominacion,
+                      Long condicionIvaId, String condicionIvaDenominacion) {
+        this(id, cuitCuil, denominacion, condicionIvaId, condicionIvaDenominacion, null, null);
     }
 }

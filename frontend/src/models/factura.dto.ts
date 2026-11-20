@@ -57,6 +57,8 @@ export interface ClienteDTO {
   denominacion: string;
   condicionIvaId?: number;
   condicionIvaDenominacion?: string;
+  listaPrecioId?: number;
+  listaPrecioDenominacion?: string;
 }
 
 export interface ListaPrecioArticuloDTO {
@@ -91,6 +93,7 @@ export interface FacturaEdicionDTO {
   condicionIvaId: number;
   puntoVentaId: number;
   tipoMonedaId: number;
+  listaPrecioId?: number | null;
   importeCobrado: number;
   observaciones: string | null;
   estado: string;

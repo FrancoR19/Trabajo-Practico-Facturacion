@@ -20,8 +20,10 @@ public class ExploradorRepository {
     public PaginaDTO<ClienteDTO> clientes(String texto, int pagina, int tamanio) {
         String filtro = "WHERE LOWER(c.denominacion) LIKE :texto OR c.cuitCuil LIKE :texto ";
         return paginar(
-                "SELECT new com.facturacion.api.dto.ClienteDTO(c.id, c.cuitCuil, c.denominacion, ci.id, ci.denominacion) " +
-                        "FROM Cliente c LEFT JOIN c.condicionIva ci " + filtro + "ORDER BY c.denominacion",
+                "SELECT new com.facturacion.api.dto.ClienteDTO(" +
+                        "c.id, c.cuitCuil, c.denominacion, ci.id, ci.denominacion, lp.id, lp.denominacion) " +
+                        "FROM Cliente c LEFT JOIN c.condicionIva ci LEFT JOIN c.listaPrecio lp " +
+                        filtro + "ORDER BY c.denominacion",
                 "SELECT COUNT(c) FROM Cliente c " + filtro,
                 ClienteDTO.class, texto, pagina, tamanio);
     }

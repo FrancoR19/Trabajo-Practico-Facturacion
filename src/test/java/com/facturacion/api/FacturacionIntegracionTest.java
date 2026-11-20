@@ -7,15 +7,22 @@ import com.facturacion.api.dto.FacturaReporteDTO;
 import com.facturacion.api.dto.FacturaRequestDTO;
 import com.facturacion.api.exception.ConflictoNegocioException;
 import com.facturacion.api.exception.RecursoNoEncontradoException;
+import com.itextpdf.kernel.pdf.PdfDictionary;
 import com.itextpdf.kernel.pdf.PdfDocument;
+import com.itextpdf.kernel.pdf.PdfName;
 import com.itextpdf.kernel.pdf.PdfReader;
 import com.itextpdf.kernel.pdf.canvas.parser.PdfTextExtractor;
 import com.facturacion.api.modelo.Articulo;
+import com.facturacion.api.modelo.Cliente;
 import com.facturacion.api.modelo.CondicionIva;
+import com.facturacion.api.modelo.Contacto;
+import com.facturacion.api.modelo.Domicilio;
+import com.facturacion.api.modelo.EstadoFactura;
 import com.facturacion.api.modelo.FacturaVenta;
 import com.facturacion.api.modelo.ListaPrecio;
 import com.facturacion.api.modelo.ListaPrecioArticulo;
 import com.facturacion.api.modelo.PuntoVenta;
+import com.facturacion.api.modelo.TipoComprobante;
 import com.facturacion.api.modelo.TipoMoneda;
 import com.facturacion.api.modelo.Usuario;
 import com.facturacion.api.reportes.ReporteService;
@@ -39,6 +46,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 
@@ -85,6 +93,8 @@ class FacturacionIntegracionTest {
     private CondicionIva condicionIva;
     private TipoMoneda monedaPes;
     private TipoMoneda monedaDol;
+    private Articulo articuloBase;
+    private ListaPrecio listaGeneral;
     private ListaPrecioArticulo precioArticulo;
 
     @BeforeEach
@@ -133,27 +143,27 @@ class FacturacionIntegracionTest {
         monedaDol.setUsuarioModificacion(usuarioJperez);
         tipoMonedaRepository.save(monedaDol);
 
-        Articulo articulo = new Articulo();
-        articulo.setCodigo("ART-100");
-        articulo.setDenominacion("Teclado Mecanico");
-        articulo.setFechaAlta(ahora);
-        articulo.setFechaModificacion(ahora);
-        articulo.setUsuarioCarga(usuarioJperez);
-        articulo.setUsuarioModificacion(usuarioJperez);
-        em.persist(articulo);
+        articuloBase = new Articulo();
+        articuloBase.setCodigo("ART-100");
+        articuloBase.setDenominacion("Teclado Mecanico");
+        articuloBase.setFechaAlta(ahora);
+        articuloBase.setFechaModificacion(ahora);
+        articuloBase.setUsuarioCarga(usuarioJperez);
+        articuloBase.setUsuarioModificacion(usuarioJperez);
+        em.persist(articuloBase);
 
-        ListaPrecio lista = new ListaPrecio();
-        lista.setCodigo("LP-01");
-        lista.setDenominacion("Lista General");
-        lista.setFechaAlta(ahora);
-        lista.setFechaModificacion(ahora);
-        lista.setUsuarioCarga(usuarioJperez);
-        lista.setUsuarioModificacion(usuarioJperez);
-        em.persist(lista);
+        listaGeneral = new ListaPrecio();
+        listaGeneral.setCodigo("LP-01");
+        listaGeneral.setDenominacion("Lista General");
+        listaGeneral.setFechaAlta(ahora);
+        listaGeneral.setFechaModificacion(ahora);
+        listaGeneral.setUsuarioCarga(usuarioJperez);
+        listaGeneral.setUsuarioModificacion(usuarioJperez);
+        em.persist(listaGeneral);
 
         precioArticulo = new ListaPrecioArticulo();
-        precioArticulo.setArticulo(articulo);
-        precioArticulo.setListaPrecio(lista);
+        precioArticulo.setArticulo(articuloBase);
+        precioArticulo.setListaPrecio(listaGeneral);
         precioArticulo.setPrecioVenta(1000.0);
         precioArticulo.setFechaAlta(ahora);
         precioArticulo.setFechaModificacion(ahora);
@@ -312,6 +322,216 @@ class FacturacionIntegracionTest {
 
         var paginaInexistente = catalogoService.listasPrecioArticulo(999999L, "", 0, 10);
         assertTrue(paginaInexistente.contenido().isEmpty());
+    }
+
+    @Test
+    void debeExponerListaPrecioPorDefectoEnClientes() {
+        ListaPrecio mayorista = crearListaPrecio("LP-MAY", "Lista Mayorista");
+        ListaPrecio minorista = crearListaPrecio("LP-MIN", "Lista Minorista");
+
+        Cliente comercial = crearClienteConLista("30-71000001-3", "Comercial Sur S.R.L.", "comercial@sur.com",
+                condicionIva, mayorista);
+        Cliente particular = crearClienteConLista("20-30111222-3", "Perez Ana", "ana@mail.com",
+                condicionIva, minorista);
+        em.flush();
+
+        var paginaComercial = catalogoService.clientes("Comercial Sur", 0, 10);
+        assertEquals(1, paginaComercial.contenido().size());
+        assertEquals(comercial.getId(), paginaComercial.contenido().get(0).id());
+        assertEquals(mayorista.getId(), paginaComercial.contenido().get(0).listaPrecioId());
+        assertEquals("Lista Mayorista", paginaComercial.contenido().get(0).listaPrecioDenominacion());
+
+        var paginaParticular = catalogoService.clientes("Perez Ana", 0, 10);
+        assertEquals(1, paginaParticular.contenido().size());
+        assertEquals(particular.getId(), paginaParticular.contenido().get(0).id());
+        assertEquals(minorista.getId(), paginaParticular.contenido().get(0).listaPrecioId());
+        assertEquals("Lista Minorista", paginaParticular.contenido().get(0).listaPrecioDenominacion());
+    }
+
+    @Test
+    void debeResolverPreciosPorListaYCodigosYOmitirFaltantes() {
+        ListaPrecio mayorista = crearListaPrecio("LP-MAY", "Lista Mayorista");
+        ListaPrecioArticulo precioMayoristaArt100 = crearPrecioParaLista(mayorista, articuloBase, 800.0);
+
+        Articulo art200 = new Articulo();
+        art200.setCodigo("ART-200");
+        art200.setDenominacion("Mouse Gamer");
+        art200.setFechaAlta(new Date());
+        art200.setFechaModificacion(new Date());
+        art200.setUsuarioCarga(usuarioJperez);
+        art200.setUsuarioModificacion(usuarioJperez);
+        em.persist(art200);
+        crearPrecioParaLista(listaGeneral, art200, 500.0);
+        em.flush();
+
+        var encontrados = catalogoService.preciosPorListaYCodigos(mayorista.getId(), List.of("ART-100", "ART-200"));
+        assertEquals(1, encontrados.size());
+        assertEquals("ART-100", encontrados.get(0).articuloCodigo());
+        assertEquals(precioMayoristaArt100.getId(), encontrados.get(0).id());
+        assertEquals(800.0, encontrados.get(0).precioVenta(), 0.001);
+        assertEquals("Lista Mayorista", encontrados.get(0).listaPrecio());
+
+        assertTrue(catalogoService.preciosPorListaYCodigos(mayorista.getId(), List.of()).isEmpty());
+    }
+
+    @Test
+    void debeRechazarMezclaDeListasDePreciosYDevolverListaEnEdicion() {
+        ListaPrecio mayorista = crearListaPrecio("LP-MAY", "Lista Mayorista");
+        ListaPrecioArticulo precioMayorista = crearPrecioParaLista(mayorista, articuloBase, 750.0);
+        em.flush();
+
+        FacturaRequestDTO mezclada = new FacturaRequestDTO();
+        mezclada.setSinCliente(true);
+        mezclada.setPuntoVentaId(puntoVenta.getId());
+        mezclada.setCondicionIvaId(condicionIva.getId());
+        mezclada.setTipoMonedaId(monedaPes.getId());
+        mezclada.setFechaEmision(LocalDate.now());
+        mezclada.setDetalles(List.of(
+                new FacturaDetalleRequestDTO(precioArticulo.getId(), 1.0, 0.0, null),
+                new FacturaDetalleRequestDTO(precioMayorista.getId(), 1.0, 0.0, null)
+        ));
+        assertThrows(IllegalArgumentException.class, () -> facturaService.crear(mezclada));
+
+        FacturaReporteDTO creada = facturaService.crear(crearSolicitud(monedaPes.getId(), "EMITIDA", 1.0, 0.0));
+        var edicion = facturaService.obtenerParaEdicion(creada.getId());
+        assertEquals(listaGeneral.getId(), edicion.listaPrecioId());
+    }
+
+    @Test
+    void debeGenerarQrOficialSoloParaEmitidaEInformadaConCaeYVencimiento() throws Exception {
+        // 1. Borrador / no informada -> sin QR
+        FacturaReporteDTO borrador = facturaService.crear(crearSolicitud(monedaPes.getId(), "BORRADOR", 1.0, 0.0));
+        assertEquals(0, contarXObjectsPdf(reporteService.generarPdfFactura(borrador.getId())));
+
+        // 2. Informada pero sin fecha de vencimiento de CAE -> sin QR
+        FacturaReporteDTO emitida = facturaService.crear(crearSolicitud(monedaPes.getId(), "EMITIDA", 1.0, 0.0));
+        facturaService.informarArca(emitida.getId());
+        FacturaVenta entidad = facturaRepository.findById(emitida.getId()).orElseThrow();
+        Date vencimientoOriginal = entidad.getCaeFechaVencimiento();
+        entidad.setCaeFechaVencimiento(null);
+        em.flush();
+        assertEquals(0, contarXObjectsPdf(reporteService.generarPdfFactura(emitida.getId())));
+
+        // 3. Informada, EMITIDA, con CAE y vencimiento -> genera QR debajo de los datos del CAE y URL oficial AFIP
+        entidad.setCaeFechaVencimiento(vencimientoOriginal);
+        em.flush();
+
+        String qrUrl = reporteService.construirUrlQrArca(
+                entidad, TipoComprobante.codigoAfip(entidad.getTipoComprobante()), "PES");
+        assertTrue(qrUrl.startsWith("https://www.afip.gob.ar/fe/qr/?p="));
+        String jsonQr = new String(
+                Base64.getDecoder().decode(qrUrl.substring("https://www.afip.gob.ar/fe/qr/?p=".length())),
+                StandardCharsets.UTF_8);
+        assertTrue(jsonQr.contains("\"ver\":1"));
+        assertTrue(jsonQr.contains("\"fecha\":\"" + entidad.getFechaEmision() + "\""));
+        assertTrue(jsonQr.contains("\"cuit\":20471967905"));
+        assertTrue(jsonQr.contains("\"ptoVta\":1"));
+        assertTrue(jsonQr.contains("\"tipoCmp\":6"));
+        assertTrue(jsonQr.contains("\"nroCmp\":" + entidad.getNumero()));
+        assertTrue(jsonQr.contains("\"importe\":1210.00"));
+        assertTrue(jsonQr.contains("\"moneda\":\"PES\""));
+        assertTrue(jsonQr.contains("\"ctz\":1"));
+        assertTrue(jsonQr.contains("\"tipoDocRec\":99"));
+        assertTrue(jsonQr.contains("\"nroDocRec\":0"));
+        assertTrue(jsonQr.contains("\"tipoCodAut\":\"E\""));
+        assertTrue(jsonQr.contains("\"codAut\":74431234567890"));
+
+        // Triangulacion: cliente con CUIT (tipoDocRec:80) y Factura A (tipoCmp:1)
+        Cliente empresa = crearClienteConLista("30-71000001-3", "Empresa Prueba S.A.",
+                "empresa@prueba.com", condicionIva, listaGeneral);
+        entidad.setCliente(empresa);
+        String qrUrlConCuit = reporteService.construirUrlQrArca(entidad, 1, "PES");
+        String jsonQrConCuit = new String(
+                Base64.getDecoder().decode(qrUrlConCuit.substring("https://www.afip.gob.ar/fe/qr/?p=".length())),
+                StandardCharsets.UTF_8);
+        assertTrue(jsonQrConCuit.contains("\"tipoCmp\":1"));
+        assertTrue(jsonQrConCuit.contains("\"tipoDocRec\":80"));
+        assertTrue(jsonQrConCuit.contains("\"nroDocRec\":30710000013"));
+        entidad.setCliente(null);
+
+        byte[] pdfConQr = reporteService.generarPdfFactura(emitida.getId());
+        assertTrue(contarXObjectsPdf(pdfConQr) > 0);
+        try (PdfDocument doc = new PdfDocument(new PdfReader(new ByteArrayInputStream(pdfConQr)))) {
+            String texto = PdfTextExtractor.getTextFromPage(doc.getFirstPage());
+            int idxCae = texto.indexOf("CAE: 74431234567890");
+            int idxQrLabel = texto.indexOf("Código QR de validación fiscal ARCA / AFIP");
+            assertTrue(idxCae >= 0 && idxQrLabel > idxCae,
+                    "El bloque QR debe renderizarse debajo de los datos del CAE");
+        }
+
+        // 4. Anulada (incluso habiendo sido informada) -> sin QR
+        entidad.setEstado(EstadoFactura.ANULADA);
+        em.flush();
+        byte[] pdfAnulada = reporteService.generarPdfFactura(emitida.getId());
+        assertEquals(0, contarXObjectsPdf(pdfAnulada));
+        try (PdfDocument doc = new PdfDocument(new PdfReader(new ByteArrayInputStream(pdfAnulada)))) {
+            String texto = PdfTextExtractor.getTextFromPage(doc.getFirstPage());
+            assertTrue(texto.contains("COMPROBANTE ANULADO"));
+        }
+    }
+
+    private int contarXObjectsPdf(byte[] pdfBytes) throws Exception {
+        try (PdfDocument doc = new PdfDocument(new PdfReader(new ByteArrayInputStream(pdfBytes)))) {
+            PdfDictionary resources = doc.getFirstPage().getPdfObject().getAsDictionary(PdfName.Resources);
+            if (resources == null) {
+                return 0;
+            }
+            PdfDictionary xObjects = resources.getAsDictionary(PdfName.XObject);
+            return xObjects != null ? xObjects.size() : 0;
+        }
+    }
+
+    private ListaPrecio crearListaPrecio(String codigo, String denominacion) {
+        Date ahora = new Date();
+        ListaPrecio lista = new ListaPrecio();
+        lista.setCodigo(codigo);
+        lista.setDenominacion(denominacion);
+        lista.setFechaAlta(ahora);
+        lista.setFechaModificacion(ahora);
+        lista.setUsuarioCarga(usuarioJperez);
+        lista.setUsuarioModificacion(usuarioJperez);
+        em.persist(lista);
+        return lista;
+    }
+
+    private ListaPrecioArticulo crearPrecioParaLista(ListaPrecio lista, Articulo articulo, double precioVenta) {
+        Date ahora = new Date();
+        ListaPrecioArticulo lpa = new ListaPrecioArticulo();
+        lpa.setListaPrecio(lista);
+        lpa.setArticulo(articulo);
+        lpa.setPrecioVenta(precioVenta);
+        lpa.setFechaAlta(ahora);
+        lpa.setFechaModificacion(ahora);
+        lpa.setUsuarioCarga(usuarioJperez);
+        lpa.setUsuarioModificacion(usuarioJperez);
+        return listaPrecioArticuloRepository.save(lpa);
+    }
+
+    private Cliente crearClienteConLista(String cuit, String denominacion, String email,
+                                         CondicionIva condIva, ListaPrecio listaPrecio) {
+        Contacto contacto = new Contacto();
+        contacto.setEmail(email);
+        em.persist(contacto);
+
+        Domicilio domicilio = new Domicilio();
+        domicilio.setNombreCalle("San Martin");
+        domicilio.setNumeroCalle("100");
+        em.persist(domicilio);
+
+        Date ahora = new Date();
+        Cliente c = new Cliente();
+        c.setCuitCuil(cuit);
+        c.setDenominacion(denominacion);
+        c.setContacto(contacto);
+        c.setDomicilio(domicilio);
+        c.setCondicionIva(condIva);
+        c.setListaPrecio(listaPrecio);
+        c.setFechaAlta(ahora);
+        c.setFechaModificacion(ahora);
+        c.setUsuarioCarga(usuarioJperez);
+        c.setUsuarioModificacion(usuarioJperez);
+        em.persist(c);
+        return c;
     }
 
     private FacturaRequestDTO crearSolicitud(Long monedaId, String estado, double cantidad, double bonificacion) {

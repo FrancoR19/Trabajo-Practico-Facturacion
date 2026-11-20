@@ -4,6 +4,7 @@ import com.facturacion.api.dto.FacturaFiltroDTO;
 import com.facturacion.api.dto.FacturaReporteDTO;
 import com.facturacion.api.exception.RecursoNoEncontradoException;
 import com.facturacion.api.modelo.Cliente;
+import com.facturacion.api.modelo.EstadoFactura;
 import com.facturacion.api.modelo.FacturaVenta;
 import com.facturacion.api.modelo.FacturaVentaDetalle;
 import com.facturacion.api.modelo.PuntoVenta;
@@ -19,9 +20,11 @@ import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.layout.Document;
 import com.itextpdf.layout.borders.SolidBorder;
 import com.itextpdf.layout.element.Cell;
+import com.itextpdf.layout.element.Div;
 import com.itextpdf.layout.element.Image;
 import com.itextpdf.layout.element.Paragraph;
 import com.itextpdf.layout.element.Table;
+import com.itextpdf.layout.properties.HorizontalAlignment;
 import com.itextpdf.layout.properties.TextAlignment;
 import com.itextpdf.layout.properties.UnitValue;
 import org.springframework.beans.factory.annotation.Value;
@@ -48,7 +51,7 @@ public class ReporteService {
 
     private static final DateTimeFormatter FORMATO_FECHA = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter FORMATO_GENERACION = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
-    private static final String URL_QR_ARCA = "https://www.arca.gob.ar/fe/qr/?p=";
+    private static final String URL_QR_AFIP = "https://www.afip.gob.ar/fe/qr/?p=";
 
     private final FacturaReporteRepository reporteRepository;
     private final FacturaVentaRepository facturaRepository;
@@ -184,12 +187,32 @@ public class ReporteService {
         String monedaVisualCompleta = monedaVisualConSimbolo(codigoMonedaAfip);
         String simbolo = simboloMoneda(codigoMonedaAfip);
 
+        boolean conCae = factura.getCae() != null && !factura.getCae().isBlank();
+        boolean conVencimientoCae = factura.getCaeFechaVencimiento() != null;
+        boolean esAnulada = EstadoFactura.ANULADA.equals(factura.getEstado());
+        boolean emitidaEInformada = factura.isInformadaArca()
+                && EstadoFactura.EMITIDA.equals(factura.getEstado())
+                && conCae
+                && conVencimientoCae;
+
         ByteArrayOutputStream salida = new ByteArrayOutputStream();
         try (PdfWriter writer = new PdfWriter(salida);
              PdfDocument pdf = new PdfDocument(writer);
              Document documento = new Document(pdf, PageSize.A4)) {
 
-            if (!factura.isInformadaArca()) {
+            if (esAnulada) {
+                Table avisoAnulada = new Table(1).useAllAvailableWidth().setMarginBottom(12);
+                avisoAnulada.addCell(new Cell()
+                        .setBackgroundColor(new DeviceRgb(254, 226, 226))
+                        .setBorder(new SolidBorder(new DeviceRgb(153, 27, 27), 1.5f))
+                        .setPadding(8)
+                        .add(new Paragraph("COMPROBANTE ANULADO - NO VÁLIDO COMO FACTURA")
+                                .setBold()
+                                .setFontSize(10)
+                                .setFontColor(new DeviceRgb(153, 27, 27))
+                                .setTextAlignment(TextAlignment.CENTER)));
+                documento.add(avisoAnulada);
+            } else if (!emitidaEInformada) {
                 Table aviso = new Table(1).useAllAvailableWidth().setMarginBottom(12);
                 aviso.addCell(new Cell()
                         .setBackgroundColor(new DeviceRgb(255, 243, 205))
@@ -312,24 +335,55 @@ public class ReporteService {
                             simbolo, factura.getImporteSaldo())).setFontSize(10)));
             documento.add(totales);
 
-            boolean conCae = factura.getCae() != null && !factura.getCae().isBlank();
-            if (factura.isInformadaArca() && conCae) {
+            if (emitidaEInformada) {
                 String vencimientoTexto = formatearFecha(factura.getCaeFechaVencimiento());
                 String qrUrl = construirUrlQrArca(factura, tipoCmpAfip, codigoMonedaAfip);
                 BarcodeQRCode qrCode = new BarcodeQRCode(qrUrl);
-                Image qrImage = new Image(qrCode.createFormXObject(pdf)).setWidth(105).setHeight(105);
+                Image qrImage = new Image(qrCode.createFormXObject(pdf))
+                        .setWidth(110)
+                        .setHeight(110)
+                        .setHorizontalAlignment(HorizontalAlignment.CENTER);
 
-                Table fiscal = new Table(UnitValue.createPercentArray(new float[]{1f, 2.2f}))
-                        .useAllAvailableWidth();
-                fiscal.addCell(new Cell().setPadding(8).add(qrImage));
-                fiscal.addCell(new Cell()
+                Table datosCae = new Table(1).useAllAvailableWidth().setMarginBottom(14);
+                datosCae.addCell(new Cell()
                         .setPadding(8)
                         .add(new Paragraph("Comprobante Autorizado por ARCA / AFIP").setBold().setFontSize(11))
                         .add(new Paragraph("CAE: " + factura.getCae()).setFontSize(10))
                         .add(new Paragraph("Vencimiento CAE: " + vencimientoTexto).setFontSize(10))
                         .add(new Paragraph("Resultado AFIP: "
                                 + (factura.getResultadoAfip() != null ? factura.getResultadoAfip() : "-")).setFontSize(10)));
-                documento.add(fiscal);
+                documento.add(datosCae);
+
+                Div bloqueQr = new Div()
+                        .setKeepTogether(true)
+                        .setMarginTop(6)
+                        .setPaddingTop(8);
+                bloqueQr.add(qrImage);
+                bloqueQr.add(new Paragraph("Código QR de validación fiscal ARCA / AFIP")
+                        .setFontSize(8.5f)
+                        .setFontColor(ColorConstants.DARK_GRAY)
+                        .setTextAlignment(TextAlignment.CENTER)
+                        .setMarginTop(4));
+                documento.add(bloqueQr);
+            } else if (esAnulada) {
+                Table anulada = new Table(1).useAllAvailableWidth();
+                Cell cellAnulada = new Cell()
+                        .setBackgroundColor(new DeviceRgb(254, 226, 226))
+                        .setBorder(new SolidBorder(new DeviceRgb(153, 27, 27), 1.5f))
+                        .setPadding(8)
+                        .add(new Paragraph("COMPROBANTE ANULADO - SIN VALIDACION QR")
+                                .setBold()
+                                .setFontSize(11)
+                                .setFontColor(new DeviceRgb(153, 27, 27))
+                                .setTextAlignment(TextAlignment.CENTER));
+                if (conCae) {
+                    cellAnulada.add(new Paragraph("CAE original: " + factura.getCae()
+                            + (conVencimientoCae ? " | Vto.: " + formatearFecha(factura.getCaeFechaVencimiento()) : ""))
+                            .setFontSize(9)
+                            .setTextAlignment(TextAlignment.CENTER));
+                }
+                anulada.addCell(cellAnulada);
+                documento.add(anulada);
             } else {
                 Table pendiente = new Table(1).useAllAvailableWidth();
                 pendiente.addCell(new Cell()
@@ -351,7 +405,7 @@ public class ReporteService {
         return salida.toByteArray();
     }
 
-    private String construirUrlQrArca(FacturaVenta factura, int tipoCmp, String codigoMonedaAfip) {
+    public String construirUrlQrArca(FacturaVenta factura, int tipoCmp, String codigoMonedaAfip) {
         String fecha = factura.getFechaEmision() != null
                 ? factura.getFechaEmision().format(DateTimeFormatter.ISO_LOCAL_DATE)
                 : "";
@@ -380,7 +434,7 @@ public class ReporteService {
                 importe.toPlainString(), codigoMonedaAfip, tipoDocRec, nroDocRec, codAutJson);
 
         String base64 = Base64.getEncoder().encodeToString(json.getBytes(StandardCharsets.UTF_8));
-        return URL_QR_ARCA + base64;
+        return URL_QR_AFIP + base64;
     }
 
     private String formatearCuit(Long cuit) {
