@@ -5,7 +5,7 @@ Reutiliza el modelo, los DTOs y la consulta JPQL de los TPs anteriores (JPA, JPQ
 
 ## Cómo ejecutarlo
 
-1. Tener JDK 25 LTS y MySQL en marcha.
+1. Tener JDK 17 y MySQL en marcha.
 2. Recrear la base para cargar el esquema y los datos de prueba nuevos:
    `DROP DATABASE IF EXISTS facturacion_crud_db; CREATE DATABASE facturacion_crud_db;`
 3. Poner la contraseña de MySQL en `src/main/resources/application.properties`.
