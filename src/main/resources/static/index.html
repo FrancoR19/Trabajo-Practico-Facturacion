@@ -51,12 +51,20 @@
               <button type="button" id="btn-sin-cliente" class="secundario">Consumidor Final</button>
             </div>
           </div>
-          <label>Condición de IVA <select id="condicion-iva" required></select></label>
+          <div class="campo">
+            <label for="condicion-iva">Condición de IVA</label>
+            <select id="condicion-iva" required></select>
+          </div>
+          <div class="campo">
+            <span class="etiqueta">Comprobante a emitir</span>
+            <div class="contenedor-badge-comprobante">
+              <span id="badge-tipo-comprobante" class="badge-comprobante tipo-b">Factura B</span>
+            </div>
+          </div>
           <label>Punto de venta <select id="punto-venta" required></select></label>
           <label>Tipo de moneda <select id="tipo-moneda" required></select></label>
           <label>Lista de precios <select id="lista-precio"></select></label>
           <label>Fecha de emisión <input type="date" id="fecha-emision" required></label>
-          <label>Importe cobrado <input type="number" id="importe-cobrado" min="0" step="0.01" value="0"></label>
           <label class="ancho">Observaciones <input type="text" id="observaciones" maxlength="500"></label>
         </div>
 
@@ -78,7 +86,29 @@
             <tbody id="items-body"></tbody>
           </table>
         </div>
-        <p id="total-estimado" class="total-estimado"></p>
+
+        <div class="bloque-resumen-factura">
+          <div class="campo-cobrado-bloque">
+            <label for="importe-cobrado">Importe cobrado
+              <input type="number" id="importe-cobrado" min="0" step="0.01" value="0">
+            </label>
+            <span class="pista-campo">Autocompletado con el Total Final. Podés editarlo si el cobro es parcial o diferente.</span>
+          </div>
+          <div class="desglose-totales" id="desglose-totales">
+            <div class="fila-total">
+              <span class="etiqueta-total">Subtotal Neto:</span>
+              <span class="valor-total" id="total-subtotal-neto">$ 0,00</span>
+            </div>
+            <div class="fila-total">
+              <span class="etiqueta-total">IVA (21%):</span>
+              <span class="valor-total" id="total-iva">$ 0,00</span>
+            </div>
+            <div class="fila-total total-destacado">
+              <span class="etiqueta-total">Total Final:</span>
+              <span class="valor-total" id="total-final">$ 0,00</span>
+            </div>
+          </div>
+        </div>
 
         <div class="acciones">
           <button type="button" id="btn-agregar-items" class="secundario">+ Agregar ítems</button>

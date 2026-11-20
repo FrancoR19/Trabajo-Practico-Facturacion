@@ -55,6 +55,8 @@ export interface ClienteDTO {
   id: number;
   cuitCuil: string;
   denominacion: string;
+  condicionIvaId?: number;
+  condicionIvaDenominacion?: string;
 }
 
 export interface ListaPrecioArticuloDTO {

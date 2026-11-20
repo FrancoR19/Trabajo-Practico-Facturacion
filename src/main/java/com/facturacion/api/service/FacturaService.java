@@ -250,6 +250,10 @@ public class FacturaService {
 
         PuntoVenta puntoVenta = buscarPuntoVentaConBloqueo(dto.getPuntoVentaId());
         CondicionIva condicionIva = buscarCondicionIva(dto.getCondicionIvaId());
+        boolean esSinCliente = dto.getClienteId() == null || Boolean.TRUE.equals(dto.getSinCliente());
+        if (esSinCliente && condicionIva.getCodigoAfip() == 1) {
+            throw new IllegalArgumentException("Un consumidor final no puede tener condicion IVA Responsable Inscripto");
+        }
         FacturaVenta factura = new FacturaVenta();
         factura.setPuntoVenta(puntoVenta);
         factura.setCondicionIva(condicionIva);
@@ -303,7 +307,13 @@ public class FacturaService {
             factura.setPuntoVenta(buscarPuntoVentaConBloqueo(dto.getPuntoVentaId()));
         }
         if (dto.getCondicionIvaId() != null) {
-            factura.setCondicionIva(buscarCondicionIva(dto.getCondicionIvaId()));
+            CondicionIva nuevaCondicion = buscarCondicionIva(dto.getCondicionIvaId());
+            boolean esSinCliente = (dto.getSinCliente() != null && dto.getSinCliente())
+                    || (dto.getClienteId() == null && factura.getCliente() == null);
+            if (esSinCliente && nuevaCondicion.getCodigoAfip() == 1) {
+                throw new IllegalArgumentException("Un consumidor final no puede tener condicion IVA Responsable Inscripto");
+            }
+            factura.setCondicionIva(nuevaCondicion);
         }
         factura.setTipoComprobante(TipoComprobante.porCondicionIva(factura.getCondicionIva()));
         if (dto.getTipoMonedaId() != null) {

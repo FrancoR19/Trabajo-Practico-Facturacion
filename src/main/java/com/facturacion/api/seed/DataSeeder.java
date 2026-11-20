@@ -137,7 +137,7 @@ public class DataSeeder implements CommandLineRunner {
         PuntoVenta central = buscarOCrearPuntoVenta(jperez, 1, "Sucursal Central");
         PuntoVenta norte = buscarOCrearPuntoVenta(jperez, 2, "Sucursal Norte");
         CondicionIva responsable = buscarOCrearCondicionIva(jperez, 1, "IVA Responsable Inscripto");
-        buscarOCrearCondicionIva(jperez, 5, "Consumidor Final");
+        CondicionIva consumidorFinal = buscarOCrearCondicionIva(jperez, 5, "Consumidor Final");
         TipoMoneda peso = buscarOCrearTipoMoneda(jperez, "PES", "Peso Argentino", "$");
         buscarOCrearTipoMoneda(jperez, "DOL", "Dolar Estadounidense", "US$");
 
@@ -147,7 +147,7 @@ public class DataSeeder implements CommandLineRunner {
         List<Rubro> rubros = asegurarRubros(jperez);
         List<Marca> marcas = asegurarMarcas(jperez);
 
-        List<Cliente> clientes = asegurarClientes(jperez);
+        List<Cliente> clientes = asegurarClientes(jperez, responsable, consumidorFinal);
         Map<String, Double> preciosBase = new HashMap<>();
         List<Articulo> articulos = asegurarArticulos(jperez, rubros, marcas, preciosBase);
 
@@ -156,7 +156,7 @@ public class DataSeeder implements CommandLineRunner {
 
         Long facturasExistentes = em.createQuery("SELECT COUNT(f) FROM FacturaVenta f", Long.class).getSingleResult();
         if (facturasExistentes == 0 && !preciosMinoristaIds.isEmpty()) {
-            sembrarFacturas(clientes, central, norte, responsable, peso, preciosMinoristaIds);
+            sembrarFacturas(clientes, central, norte, responsable, consumidorFinal, peso, preciosMinoristaIds);
             System.out.println("DataSeeder: 25 facturas de ejemplo creadas.");
         } else {
             System.out.println("DataSeeder: ya hay " + facturasExistentes + " facturas, no se recrean facturas.");
@@ -304,9 +304,18 @@ public class DataSeeder implements CommandLineRunner {
         return marcas;
     }
 
-    private List<Cliente> asegurarClientes(Usuario usuario) {
+    private List<Cliente> asegurarClientes(Usuario usuario, CondicionIva responsable, CondicionIva consumidorFinal) {
         List<Cliente> existentes = em.createQuery("SELECT c FROM Cliente c ORDER BY c.id", Cliente.class)
                 .getResultList();
+
+        for (Cliente c : existentes) {
+            if (c.getCondicionIva() == null) {
+                boolean esEmpresa = c.getCuitCuil() != null && c.getCuitCuil().startsWith("30");
+                c.setCondicionIva(esEmpresa ? responsable : consumidorFinal);
+                em.merge(c);
+            }
+        }
+
         if (existentes.size() >= MIN_CLIENTES) {
             return existentes;
         }
@@ -367,7 +376,8 @@ public class DataSeeder implements CommandLineRunner {
             String calle = CALLES[indice % CALLES.length];
             String numeroCalle = String.valueOf(100 + (indice * 37) % 4500);
 
-            resultado.add(crearCliente(usuario, cuit, denominacion, email, calle, numeroCalle));
+            CondicionIva condIva = esEmpresa ? responsable : consumidorFinal;
+            resultado.add(crearCliente(usuario, cuit, denominacion, email, calle, numeroCalle, condIva));
             indice++;
         }
 
@@ -481,22 +491,25 @@ public class DataSeeder implements CommandLineRunner {
     }
 
     private void sembrarFacturas(List<Cliente> clientes, PuntoVenta central, PuntoVenta norte,
-                                 CondicionIva responsable, TipoMoneda peso, List<Long> precios) {
+                                 CondicionIva responsable, CondicionIva consumidorFinal,
+                                 TipoMoneda peso, List<Long> precios) {
         Cliente cliente1 = clientes.get(0);
         Cliente cliente2 = clientes.size() > 1 ? clientes.get(1) : cliente1;
 
+        Long condCli1 = cliente1.getCondicionIva() != null ? cliente1.getCondicionIva().getId() : responsable.getId();
         FacturaReporteDTO primera = facturaService.crear(solicitud(cliente1.getId(), central.getId(),
-                responsable.getId(), peso.getId(), LocalDate.of(2026, 3, 15),
+                condCli1, peso.getId(), LocalDate.of(2026, 3, 15),
                 detalle(precios.get(0), 1.0, null),
                 detalle(precios.get(1 % precios.size()), 2.0, null)));
         facturaService.informarArca(primera.getId());
 
-        facturaService.crear(solicitud(null, central.getId(), responsable.getId(), peso.getId(),
+        facturaService.crear(solicitud(null, central.getId(), consumidorFinal.getId(), peso.getId(),
                 LocalDate.of(2026, 3, 20),
                 detalle(precios.get(2 % precios.size()), 1.0, null)));
 
+        Long condCli2 = cliente2.getCondicionIva() != null ? cliente2.getCondicionIva().getId() : responsable.getId();
         FacturaReporteDTO aAnular = facturaService.crear(solicitud(cliente2.getId(), norte.getId(),
-                responsable.getId(), peso.getId(), LocalDate.of(2026, 4, 2),
+                condCli2, peso.getId(), LocalDate.of(2026, 4, 2),
                 detalle(precios.get(3 % precios.size()), 1.0, 10.0)));
         FacturaRequestDTO anulacion = new FacturaRequestDTO();
         anulacion.setEstado("ANULADA");
@@ -504,12 +517,16 @@ public class DataSeeder implements CommandLineRunner {
         facturaService.actualizar(aAnular.getId(), anulacion);
 
         for (int i = 1; i <= 22; i++) {
-            Long clienteId = i % 3 == 0 ? null : clientes.get(i % clientes.size()).getId();
+            Cliente cli = i % 3 == 0 ? null : clientes.get(i % clientes.size());
+            Long clienteId = cli != null ? cli.getId() : null;
+            Long condicionId = cli == null
+                    ? consumidorFinal.getId()
+                    : (cli.getCondicionIva() != null ? cli.getCondicionIva().getId() : responsable.getId());
             PuntoVenta puntoVenta = i % 2 == 0 ? central : norte;
             LocalDate fecha = LocalDate.of(2026, 1 + (i % 9), 1 + (i * 3) % 27);
 
             FacturaReporteDTO factura = facturaService.crear(solicitud(clienteId, puntoVenta.getId(),
-                    responsable.getId(), peso.getId(), fecha,
+                    condicionId, peso.getId(), fecha,
                     detalle(precios.get(i % precios.size()), 1.0 + i % 3, null),
                     detalle(precios.get((i + 5) % precios.size()), 1.0, i % 4 == 0 ? 5.0 : null)));
             if (i % 4 == 0) {
@@ -529,7 +546,7 @@ public class DataSeeder implements CommandLineRunner {
     }
 
     private Cliente crearCliente(Usuario usuario, String cuit, String denominacion, String email,
-                                 String calle, String numeroCalle) {
+                                 String calle, String numeroCalle, CondicionIva condicionIva) {
         Contacto contacto = new Contacto();
         contacto.setEmail(email);
         em.persist(contacto);
@@ -544,6 +561,7 @@ public class DataSeeder implements CommandLineRunner {
         cliente.setDenominacion(denominacion);
         cliente.setContacto(contacto);
         cliente.setDomicilio(domicilio);
+        cliente.setCondicionIva(condicionIva);
         return auditar(cliente, usuario);
     }
 

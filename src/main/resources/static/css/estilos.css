@@ -584,8 +584,127 @@ td input[type="number"] {
 }
 
 /* ==========================================================================
-   TOTALES, PAGINACIÓN Y MENSAJES DE ESTADO
+   INDICADOR TIPO DE COMPROBANTE
    ========================================================================== */
+.contenedor-badge-comprobante {
+  display: flex;
+  align-items: center;
+  height: 2.4rem;
+}
+
+.badge-comprobante {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  height: 2.4rem;
+  width: 100%;
+  padding: 0 0.85rem;
+  border-radius: var(--radio-recto);
+  font-size: 0.85rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border: 1.5px solid var(--negro-profundo);
+  box-shadow: 2px 2px 0px var(--negro-profundo);
+  transition: all 0.15s ease;
+}
+
+.badge-comprobante::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background-color: currentColor;
+}
+
+.badge-comprobante.tipo-a {
+  background-color: var(--negro-profundo);
+  color: var(--verde-acido);
+}
+
+.badge-comprobante.tipo-b {
+  background-color: var(--verde-acido);
+  color: var(--negro-profundo);
+}
+
+/* ==========================================================================
+   TOTALES, CAMPO COBRADO Y MENSAJES DE ESTADO
+   ========================================================================== */
+.bloque-resumen-factura {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1.5rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+.campo-cobrado-bloque {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 250px;
+  max-width: 320px;
+  flex: 1;
+}
+
+.campo-cobrado-bloque input {
+  font-size: 1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.pista-campo {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--gris-pizarra);
+  line-height: 1.35;
+}
+
+.desglose-totales {
+  margin-left: auto;
+  min-width: 290px;
+  max-width: 380px;
+  width: 100%;
+  background-color: rgba(201, 208, 214, 0.35);
+  border-left: 4px solid var(--negro-profundo);
+  border-radius: var(--radio-recto);
+  padding: 0.75rem 1rem;
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.fila-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--gris-pizarra);
+}
+
+.fila-total .valor-total {
+  font-weight: 700;
+  color: var(--negro-profundo);
+}
+
+.fila-total.total-destacado {
+  margin-top: 0.35rem;
+  padding-top: 0.45rem;
+  border-top: 1.5px solid var(--negro-profundo);
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--negro-profundo);
+}
+
+.fila-total.total-destacado .valor-total {
+  font-size: 1.15rem;
+  color: var(--negro-profundo);
+}
+
 .total-estimado {
   text-align: right;
   font-size: 1rem;

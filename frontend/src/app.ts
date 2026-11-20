@@ -24,9 +24,12 @@ interface ItemFormulario {
 interface ClienteElegido {
   id: number;
   denominacion: string;
+  condicionIvaId?: number;
+  condicionIvaDenominacion?: string;
 }
 
 const TAMANIO_PAGINA = 5;
+const ALICUOTA_IVA = 0.21;
 
 const facturas = new FacturaService();
 const catalogos = new CatalogoService();
@@ -80,6 +83,7 @@ const formFactura = porId<HTMLFormElement>('form-factura');
 const botonGuardar = porId<HTMLButtonElement>('btn-guardar');
 const campoCliente = porId<HTMLInputElement>('cliente-texto');
 const selectCondicionIva = porId<HTMLSelectElement>('condicion-iva');
+const badgeTipoComprobante = porId<HTMLElement>('badge-tipo-comprobante');
 const selectPuntoVenta = porId<HTMLSelectElement>('punto-venta');
 const selectTipoMoneda = porId<HTMLSelectElement>('tipo-moneda');
 const selectListaPrecio = porId<HTMLSelectElement>('lista-precio');
@@ -87,7 +91,9 @@ const campoFecha = porId<HTMLInputElement>('fecha-emision');
 const campoCobrado = porId<HTMLInputElement>('importe-cobrado');
 const campoObservaciones = porId<HTMLInputElement>('observaciones');
 const itemsBody = porId<HTMLTableSectionElement>('items-body');
-const totalEstimado = porId<HTMLElement>('total-estimado');
+const spanSubtotalNeto = porId<HTMLElement>('total-subtotal-neto');
+const spanIva = porId<HTMLElement>('total-iva');
+const spanTotalFinal = porId<HTMLElement>('total-final');
 const facturasBody = porId<HTMLTableSectionElement>('facturas-body');
 const botonAnterior = porId<HTMLButtonElement>('btn-anterior');
 const botonSiguiente = porId<HTMLButtonElement>('btn-siguiente');
@@ -99,6 +105,7 @@ const exploradorClientes = new Explorador<ClienteDTO>({
   columnas: [
     { titulo: 'CUIT/CUIL', valor: (c) => c.cuitCuil },
     { titulo: 'Denominación', valor: (c) => c.denominacion },
+    { titulo: 'Condición IVA', valor: (c) => c.condicionIvaDenominacion || '-' },
   ],
   buscar: (texto, pagina) => catalogos.buscarClientes(texto, pagina),
   id: (c) => c.id,
@@ -194,6 +201,12 @@ async function cargarCatalogos(): Promise<void> {
   llenarSelect(selectTipoMoneda, tiposMoneda);
   llenarSelect(selectListaPrecio, listasPrecios);
   listasPreciosCatalogo = listasPrecios;
+
+  if (!cliente) {
+    fijarConsumidorFinal();
+  } else {
+    actualizarTipoComprobante();
+  }
 }
 
 function leerFiltros(): FacturaFiltrosDTO {
@@ -295,9 +308,78 @@ function subtotalNeto(item: ItemFormulario): number {
   return item.cantidad * item.precioUnitario * (1 - item.porcentajeBonificacion / 100);
 }
 
-function actualizarTotalEstimado(): void {
-  const total = items.reduce((suma, item) => suma + subtotalNeto(item), 0);
-  totalEstimado.textContent = `Total neto estimado (sin IVA): ${formatoMoneda.format(total)}`;
+interface TotalesCalculados {
+  subtotalNeto: number;
+  iva: number;
+  totalFinal: number;
+}
+
+function calcularTotales(): TotalesCalculados {
+  let subtotalNetoTotal = 0;
+  let ivaTotal = 0;
+  let totalFinal = 0;
+
+  for (const item of items) {
+    const netoSinRedondear = item.cantidad * item.precioUnitario * (1 - item.porcentajeBonificacion / 100);
+    const neto = Math.round(netoSinRedondear * 100) / 100;
+    const iva = Math.round(netoSinRedondear * ALICUOTA_IVA * 100) / 100;
+    const subtotal = Math.round((neto + iva) * 100) / 100;
+
+    subtotalNetoTotal += neto;
+    ivaTotal += iva;
+    totalFinal += subtotal;
+  }
+
+  return {
+    subtotalNeto: Math.round(subtotalNetoTotal * 100) / 100,
+    iva: Math.round(ivaTotal * 100) / 100,
+    totalFinal: Math.round(totalFinal * 100) / 100,
+  };
+}
+
+function actualizarTotales(autocompletarCobrado = true): void {
+  const { subtotalNeto, iva, totalFinal } = calcularTotales();
+  spanSubtotalNeto.textContent = formatoMoneda.format(subtotalNeto);
+  spanIva.textContent = formatoMoneda.format(iva);
+  spanTotalFinal.textContent = formatoMoneda.format(totalFinal);
+
+  if (autocompletarCobrado) {
+    campoCobrado.value = totalFinal.toFixed(2);
+  }
+}
+
+function buscarOpcionConsumidorFinal(): HTMLOptionElement | null {
+  for (const opcion of Array.from(selectCondicionIva.options)) {
+    const texto = opcion.textContent?.trim().toLowerCase() || '';
+    if (texto.includes('consumidor final')) {
+      return opcion;
+    }
+  }
+  return null;
+}
+
+function esCondicionResponsableInscripto(): boolean {
+  const opcion = selectCondicionIva.selectedOptions[0];
+  const texto = opcion ? opcion.textContent?.trim().toLowerCase() || '' : '';
+  return texto.includes('responsable inscripto');
+}
+
+function actualizarTipoComprobante(): void {
+  const esResponsable = esCondicionResponsableInscripto();
+  const tipo = esResponsable ? 'Factura A' : 'Factura B';
+  badgeTipoComprobante.textContent = tipo;
+  badgeTipoComprobante.className = `badge-comprobante ${esResponsable ? 'tipo-a' : 'tipo-b'}`;
+}
+
+function fijarConsumidorFinal(): void {
+  cliente = null;
+  renderCliente();
+  const opcionCF = buscarOpcionConsumidorFinal();
+  if (opcionCF) {
+    selectCondicionIva.value = opcionCF.value;
+  }
+  selectCondicionIva.disabled = true;
+  actualizarTipoComprobante();
 }
 
 function crearInputItem(campo: string, indice: number, valor: number, atributos: Record<string, string>): HTMLTableCellElement {
@@ -352,7 +434,7 @@ function renderItems(): void {
     itemsBody.append(fila);
   });
 
-  actualizarTotalEstimado();
+  actualizarTotales(true);
 }
 
 function renderCliente(): void {
@@ -365,8 +447,7 @@ function reiniciarFormulario(): void {
   cliente = null;
   facturaEditandoId = null;
   campoFecha.value = hoy();
-  campoCobrado.value = '0';
-  renderCliente();
+  fijarConsumidorFinal();
   renderItems();
 }
 
@@ -402,7 +483,12 @@ async function editarFactura(id: number): Promise<void> {
     cliente = factura.clienteId !== null && factura.clienteDenominacion !== null
       ? { id: factura.clienteId, denominacion: factura.clienteDenominacion }
       : null;
+    renderCliente();
+
     selectCondicionIva.value = String(factura.condicionIvaId);
+    selectCondicionIva.disabled = cliente === null;
+    actualizarTipoComprobante();
+
     selectPuntoVenta.value = String(factura.puntoVentaId);
     selectTipoMoneda.value = String(factura.tipoMonedaId);
     campoFecha.value = factura.fechaEmision;
@@ -410,8 +496,8 @@ async function editarFactura(id: number): Promise<void> {
     campoObservaciones.value = factura.observaciones ?? '';
     items = factura.detalles.map((detalle) => ({ ...detalle }));
 
-    renderCliente();
     renderItems();
+    actualizarTotales(false);
     abrirFormulario(`EDITAR FACTURA — N° ${factura.numero}`, true);
     void cargarFacturas();
   } catch (error) {
@@ -422,8 +508,42 @@ async function editarFactura(id: number): Promise<void> {
 async function elegirCliente(): Promise<void> {
   const [elegido] = await exploradorClientes.abrir();
   if (elegido) {
-    cliente = { id: elegido.id, denominacion: elegido.denominacion };
+    cliente = {
+      id: elegido.id,
+      denominacion: elegido.denominacion,
+      condicionIvaId: elegido.condicionIvaId,
+      condicionIvaDenominacion: elegido.condicionIvaDenominacion,
+    };
     renderCliente();
+    selectCondicionIva.disabled = false;
+
+    let asignado = false;
+    if (elegido.condicionIvaId !== undefined && elegido.condicionIvaId !== null) {
+      selectCondicionIva.value = String(elegido.condicionIvaId);
+      asignado = selectCondicionIva.value === String(elegido.condicionIvaId);
+    }
+    if (!asignado && elegido.condicionIvaDenominacion) {
+      const denomBuscada = elegido.condicionIvaDenominacion.trim().toLowerCase();
+      for (const opcion of Array.from(selectCondicionIva.options)) {
+        if (opcion.textContent?.trim().toLowerCase() === denomBuscada) {
+          selectCondicionIva.value = opcion.value;
+          asignado = true;
+          break;
+        }
+      }
+    }
+    if (!asignado) {
+      const esEmpresa = elegido.cuitCuil && elegido.cuitCuil.replace(/\D/g, '').startsWith('30');
+      for (const opcion of Array.from(selectCondicionIva.options)) {
+        const texto = opcion.textContent?.trim().toLowerCase() || '';
+        if (esEmpresa && texto.includes('responsable inscripto')) {
+          selectCondicionIva.value = opcion.value;
+          asignado = true;
+          break;
+        }
+      }
+    }
+    actualizarTipoComprobante();
   }
 }
 
@@ -457,7 +577,7 @@ function actualizarItem(input: HTMLInputElement): void {
 
   const celda = input.closest('tr')?.querySelector<HTMLElement>('[data-subtotal]');
   if (celda) celda.textContent = formatoMoneda.format(subtotalNeto(item));
-  actualizarTotalEstimado();
+  actualizarTotales(true);
 }
 
 async function guardarFactura(evento: SubmitEvent): Promise<void> {
@@ -473,6 +593,25 @@ async function guardarFactura(evento: SubmitEvent): Promise<void> {
   }
   if (items.some((item) => item.porcentajeBonificacion < 0 || item.porcentajeBonificacion > 100)) {
     mostrarMensaje('La bonificación de cada ítem debe estar entre 0 y 100', 'error');
+    return;
+  }
+  if (!selectCondicionIva.value) {
+    mostrarMensaje('Seleccioná una condición de IVA', 'error');
+    return;
+  }
+  if (cliente === null && esCondicionResponsableInscripto()) {
+    mostrarMensaje('Un Consumidor Final no puede emitirse con condición IVA Responsable Inscripto', 'error');
+    return;
+  }
+
+  const { totalFinal } = calcularTotales();
+  const importeCobrado = Number(campoCobrado.value || 0);
+  if (importeCobrado < 0) {
+    mostrarMensaje('El importe cobrado no puede ser negativo', 'error');
+    return;
+  }
+  if (importeCobrado > totalFinal) {
+    mostrarMensaje('El importe cobrado no puede superar el total de la factura', 'error');
     return;
   }
 
@@ -587,11 +726,14 @@ function inicializar(): void {
   porId<HTMLButtonElement>('btn-reporte-excel').addEventListener('click', () => {
     window.open(facturas.urlReporte('excel', filtrosActivos), '_blank');
   });
+  selectCondicionIva.addEventListener('change', () => {
+    actualizarTipoComprobante();
+  });
+
   porId<HTMLButtonElement>('btn-cancelar-formulario').addEventListener('click', cerrarFormulario);
   porId<HTMLButtonElement>('btn-buscar-cliente').addEventListener('click', () => void elegirCliente());
   porId<HTMLButtonElement>('btn-sin-cliente').addEventListener('click', () => {
-    cliente = null;
-    renderCliente();
+    fijarConsumidorFinal();
   });
   porId<HTMLButtonElement>('btn-agregar-items').addEventListener('click', () => void agregarItems());
 

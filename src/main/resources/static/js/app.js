@@ -2,6 +2,7 @@ import { Explorador } from './components/Explorador.js';
 import { CatalogoService } from './services/CatalogoService.js';
 import { FacturaService } from './services/FacturaService.js';
 const TAMANIO_PAGINA = 5;
+const ALICUOTA_IVA = 0.21;
 const facturas = new FacturaService();
 const catalogos = new CatalogoService();
 const formatoMoneda = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' });
@@ -55,6 +56,7 @@ const formFactura = porId('form-factura');
 const botonGuardar = porId('btn-guardar');
 const campoCliente = porId('cliente-texto');
 const selectCondicionIva = porId('condicion-iva');
+const badgeTipoComprobante = porId('badge-tipo-comprobante');
 const selectPuntoVenta = porId('punto-venta');
 const selectTipoMoneda = porId('tipo-moneda');
 const selectListaPrecio = porId('lista-precio');
@@ -62,7 +64,9 @@ const campoFecha = porId('fecha-emision');
 const campoCobrado = porId('importe-cobrado');
 const campoObservaciones = porId('observaciones');
 const itemsBody = porId('items-body');
-const totalEstimado = porId('total-estimado');
+const spanSubtotalNeto = porId('total-subtotal-neto');
+const spanIva = porId('total-iva');
+const spanTotalFinal = porId('total-final');
 const facturasBody = porId('facturas-body');
 const botonAnterior = porId('btn-anterior');
 const botonSiguiente = porId('btn-siguiente');
@@ -73,6 +77,7 @@ const exploradorClientes = new Explorador({
     columnas: [
         { titulo: 'CUIT/CUIL', valor: (c) => c.cuitCuil },
         { titulo: 'Denominación', valor: (c) => c.denominacion },
+        { titulo: 'Condición IVA', valor: (c) => c.condicionIvaDenominacion || '-' },
     ],
     buscar: (texto, pagina) => catalogos.buscarClientes(texto, pagina),
     id: (c) => c.id,
@@ -153,6 +158,12 @@ async function cargarCatalogos() {
     llenarSelect(selectTipoMoneda, tiposMoneda);
     llenarSelect(selectListaPrecio, listasPrecios);
     listasPreciosCatalogo = listasPrecios;
+    if (!cliente) {
+        fijarConsumidorFinal();
+    }
+    else {
+        actualizarTipoComprobante();
+    }
 }
 function leerFiltros() {
     const valor = (id) => porId(id).value.trim();
@@ -225,9 +236,63 @@ async function cargarFacturas() {
 function subtotalNeto(item) {
     return item.cantidad * item.precioUnitario * (1 - item.porcentajeBonificacion / 100);
 }
-function actualizarTotalEstimado() {
-    const total = items.reduce((suma, item) => suma + subtotalNeto(item), 0);
-    totalEstimado.textContent = `Total neto estimado (sin IVA): ${formatoMoneda.format(total)}`;
+function calcularTotales() {
+    let subtotalNetoTotal = 0;
+    let ivaTotal = 0;
+    let totalFinal = 0;
+    for (const item of items) {
+        const netoSinRedondear = item.cantidad * item.precioUnitario * (1 - item.porcentajeBonificacion / 100);
+        const neto = Math.round(netoSinRedondear * 100) / 100;
+        const iva = Math.round(netoSinRedondear * ALICUOTA_IVA * 100) / 100;
+        const subtotal = Math.round((neto + iva) * 100) / 100;
+        subtotalNetoTotal += neto;
+        ivaTotal += iva;
+        totalFinal += subtotal;
+    }
+    return {
+        subtotalNeto: Math.round(subtotalNetoTotal * 100) / 100,
+        iva: Math.round(ivaTotal * 100) / 100,
+        totalFinal: Math.round(totalFinal * 100) / 100,
+    };
+}
+function actualizarTotales(autocompletarCobrado = true) {
+    const { subtotalNeto, iva, totalFinal } = calcularTotales();
+    spanSubtotalNeto.textContent = formatoMoneda.format(subtotalNeto);
+    spanIva.textContent = formatoMoneda.format(iva);
+    spanTotalFinal.textContent = formatoMoneda.format(totalFinal);
+    if (autocompletarCobrado) {
+        campoCobrado.value = totalFinal.toFixed(2);
+    }
+}
+function buscarOpcionConsumidorFinal() {
+    for (const opcion of Array.from(selectCondicionIva.options)) {
+        const texto = opcion.textContent?.trim().toLowerCase() || '';
+        if (texto.includes('consumidor final')) {
+            return opcion;
+        }
+    }
+    return null;
+}
+function esCondicionResponsableInscripto() {
+    const opcion = selectCondicionIva.selectedOptions[0];
+    const texto = opcion ? opcion.textContent?.trim().toLowerCase() || '' : '';
+    return texto.includes('responsable inscripto');
+}
+function actualizarTipoComprobante() {
+    const esResponsable = esCondicionResponsableInscripto();
+    const tipo = esResponsable ? 'Factura A' : 'Factura B';
+    badgeTipoComprobante.textContent = tipo;
+    badgeTipoComprobante.className = `badge-comprobante ${esResponsable ? 'tipo-a' : 'tipo-b'}`;
+}
+function fijarConsumidorFinal() {
+    cliente = null;
+    renderCliente();
+    const opcionCF = buscarOpcionConsumidorFinal();
+    if (opcionCF) {
+        selectCondicionIva.value = opcionCF.value;
+    }
+    selectCondicionIva.disabled = true;
+    actualizarTipoComprobante();
 }
 function crearInputItem(campo, indice, valor, atributos) {
     const input = document.createElement('input');
@@ -266,7 +331,7 @@ function renderItems() {
         fila.append(crearCelda(item.listaPrecio), crearCelda(item.articuloCodigo), crearCelda(item.articuloDenominacion), crearCelda(formatoMoneda.format(item.precioUnitario)), crearInputItem('cantidad', indice, item.cantidad, { min: '0.01', step: 'any', required: 'true' }), crearInputItem('porcentajeBonificacion', indice, item.porcentajeBonificacion, { min: '0', max: '100', step: 'any' }), subtotal, celdaQuitar);
         itemsBody.append(fila);
     });
-    actualizarTotalEstimado();
+    actualizarTotales(true);
 }
 function renderCliente() {
     campoCliente.value = cliente ? cliente.denominacion : 'Consumidor Final';
@@ -277,8 +342,7 @@ function reiniciarFormulario() {
     cliente = null;
     facturaEditandoId = null;
     campoFecha.value = hoy();
-    campoCobrado.value = '0';
-    renderCliente();
+    fijarConsumidorFinal();
     renderItems();
 }
 function abrirFormulario(titulo, editando = false) {
@@ -309,15 +373,18 @@ async function editarFactura(id) {
         cliente = factura.clienteId !== null && factura.clienteDenominacion !== null
             ? { id: factura.clienteId, denominacion: factura.clienteDenominacion }
             : null;
+        renderCliente();
         selectCondicionIva.value = String(factura.condicionIvaId);
+        selectCondicionIva.disabled = cliente === null;
+        actualizarTipoComprobante();
         selectPuntoVenta.value = String(factura.puntoVentaId);
         selectTipoMoneda.value = String(factura.tipoMonedaId);
         campoFecha.value = factura.fechaEmision;
         campoCobrado.value = String(factura.importeCobrado);
         campoObservaciones.value = factura.observaciones ?? '';
         items = factura.detalles.map((detalle) => ({ ...detalle }));
-        renderCliente();
         renderItems();
+        actualizarTotales(false);
         abrirFormulario(`EDITAR FACTURA — N° ${factura.numero}`, true);
         void cargarFacturas();
     }
@@ -328,8 +395,41 @@ async function editarFactura(id) {
 async function elegirCliente() {
     const [elegido] = await exploradorClientes.abrir();
     if (elegido) {
-        cliente = { id: elegido.id, denominacion: elegido.denominacion };
+        cliente = {
+            id: elegido.id,
+            denominacion: elegido.denominacion,
+            condicionIvaId: elegido.condicionIvaId,
+            condicionIvaDenominacion: elegido.condicionIvaDenominacion,
+        };
         renderCliente();
+        selectCondicionIva.disabled = false;
+        let asignado = false;
+        if (elegido.condicionIvaId !== undefined && elegido.condicionIvaId !== null) {
+            selectCondicionIva.value = String(elegido.condicionIvaId);
+            asignado = selectCondicionIva.value === String(elegido.condicionIvaId);
+        }
+        if (!asignado && elegido.condicionIvaDenominacion) {
+            const denomBuscada = elegido.condicionIvaDenominacion.trim().toLowerCase();
+            for (const opcion of Array.from(selectCondicionIva.options)) {
+                if (opcion.textContent?.trim().toLowerCase() === denomBuscada) {
+                    selectCondicionIva.value = opcion.value;
+                    asignado = true;
+                    break;
+                }
+            }
+        }
+        if (!asignado) {
+            const esEmpresa = elegido.cuitCuil && elegido.cuitCuil.replace(/\D/g, '').startsWith('30');
+            for (const opcion of Array.from(selectCondicionIva.options)) {
+                const texto = opcion.textContent?.trim().toLowerCase() || '';
+                if (esEmpresa && texto.includes('responsable inscripto')) {
+                    selectCondicionIva.value = opcion.value;
+                    asignado = true;
+                    break;
+                }
+            }
+        }
+        actualizarTipoComprobante();
     }
 }
 async function agregarItems() {
@@ -363,7 +463,7 @@ function actualizarItem(input) {
     const celda = input.closest('tr')?.querySelector('[data-subtotal]');
     if (celda)
         celda.textContent = formatoMoneda.format(subtotalNeto(item));
-    actualizarTotalEstimado();
+    actualizarTotales(true);
 }
 async function guardarFactura(evento) {
     evento.preventDefault();
@@ -377,6 +477,24 @@ async function guardarFactura(evento) {
     }
     if (items.some((item) => item.porcentajeBonificacion < 0 || item.porcentajeBonificacion > 100)) {
         mostrarMensaje('La bonificación de cada ítem debe estar entre 0 y 100', 'error');
+        return;
+    }
+    if (!selectCondicionIva.value) {
+        mostrarMensaje('Seleccioná una condición de IVA', 'error');
+        return;
+    }
+    if (cliente === null && esCondicionResponsableInscripto()) {
+        mostrarMensaje('Un Consumidor Final no puede emitirse con condición IVA Responsable Inscripto', 'error');
+        return;
+    }
+    const { totalFinal } = calcularTotales();
+    const importeCobrado = Number(campoCobrado.value || 0);
+    if (importeCobrado < 0) {
+        mostrarMensaje('El importe cobrado no puede ser negativo', 'error');
+        return;
+    }
+    if (importeCobrado > totalFinal) {
+        mostrarMensaje('El importe cobrado no puede superar el total de la factura', 'error');
         return;
     }
     const observaciones = campoObservaciones.value.trim();
@@ -482,11 +600,13 @@ function inicializar() {
     porId('btn-reporte-excel').addEventListener('click', () => {
         window.open(facturas.urlReporte('excel', filtrosActivos), '_blank');
     });
+    selectCondicionIva.addEventListener('change', () => {
+        actualizarTipoComprobante();
+    });
     porId('btn-cancelar-formulario').addEventListener('click', cerrarFormulario);
     porId('btn-buscar-cliente').addEventListener('click', () => void elegirCliente());
     porId('btn-sin-cliente').addEventListener('click', () => {
-        cliente = null;
-        renderCliente();
+        fijarConsumidorFinal();
     });
     porId('btn-agregar-items').addEventListener('click', () => void agregarItems());
     itemsBody.addEventListener('input', (evento) => {
