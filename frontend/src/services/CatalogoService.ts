@@ -23,6 +23,19 @@ export class CatalogoService {
     );
   }
 
+  async obtenerPreciosPorListaYCodigos(
+    listaPrecioId: number,
+    codigos: string[],
+  ): Promise<ListaPrecioArticuloDTO[]> {
+    const params = new URLSearchParams({ listaPrecioId: String(listaPrecioId) });
+    for (const codigo of codigos) {
+      params.append('codigos', codigo);
+    }
+    return solicitar<ListaPrecioArticuloDTO[]>(
+      `${API_BASE}/lista-precio-articulos/por-codigos?${params.toString()}`,
+    );
+  }
+
   async listasPrecios(): Promise<CatalogoItemDTO[]> {
     return solicitar<CatalogoItemDTO[]>(`${API_BASE}/catalogos/listas-precios`);
   }

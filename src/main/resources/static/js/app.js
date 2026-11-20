@@ -42,7 +42,6 @@ let cliente = null;
 let facturaEditandoId = null;
 let paginaActual = 0;
 let filtrosActivos = {};
-let listasPreciosCatalogo = [];
 function porId(id) {
     const elemento = document.getElementById(id);
     if (!elemento)
@@ -78,27 +77,31 @@ const exploradorClientes = new Explorador({
         { titulo: 'CUIT/CUIL', valor: (c) => c.cuitCuil },
         { titulo: 'Denominación', valor: (c) => c.denominacion },
         { titulo: 'Condición IVA', valor: (c) => c.condicionIvaDenominacion || '-' },
+        { titulo: 'Lista de precios', valor: (c) => c.listaPrecioDenominacion || '-' },
     ],
     buscar: (texto, pagina) => catalogos.buscarClientes(texto, pagina),
     id: (c) => c.id,
     multiple: false,
 });
 const exploradorPrecios = new Explorador({
-    titulo: 'Buscar artículos en listas de precios',
-    selector: {
-        titulo: 'Lista de precios',
-        opciones: () => listasPreciosCatalogo.map((lista) => ({ valor: String(lista.id), texto: lista.descripcion })),
-        valorInicial: () => selectListaPrecio.value,
-    },
+    titulo: 'Buscar artículos en lista de precios',
+    subtitulo: () => `Lista de precios aplicada: ${etiquetaListaPrecioSeleccionada()}`,
     columnas: [
-        { titulo: 'Lista', valor: (p) => p.listaPrecio },
         { titulo: 'Código', valor: (p) => p.articuloCodigo },
         { titulo: 'Artículo', valor: (p) => p.articuloDenominacion },
         { titulo: 'Precio', valor: (p) => formatoMoneda.format(p.precioVenta) },
     ],
     buscar: (texto, pagina) => {
-        const valor = exploradorPrecios.valorSelector();
-        const listaPrecioId = valor ? Number(valor) : undefined;
+        const listaPrecioId = selectListaPrecio.value ? Number(selectListaPrecio.value) : undefined;
+        if (!listaPrecioId) {
+            return Promise.resolve({
+                contenido: [],
+                pagina: 0,
+                tamanio: 8,
+                totalElementos: 0,
+                totalPaginas: 0,
+            });
+        }
         return catalogos.buscarListasPrecioArticulo(texto, pagina, listaPrecioId);
     },
     id: (p) => p.id,
@@ -157,8 +160,8 @@ async function cargarCatalogos() {
     llenarSelect(selectCondicionIva, condicionesIva);
     llenarSelect(selectTipoMoneda, tiposMoneda);
     llenarSelect(selectListaPrecio, listasPrecios);
-    listasPreciosCatalogo = listasPrecios;
-    if (!cliente) {
+    fijarTipoMonedaPeso();
+    if (!cliente && facturaEditandoId === null) {
         fijarConsumidorFinal();
     }
     else {
@@ -284,6 +287,97 @@ function actualizarTipoComprobante() {
     badgeTipoComprobante.textContent = tipo;
     badgeTipoComprobante.className = `badge-comprobante ${esResponsable ? 'tipo-a' : 'tipo-b'}`;
 }
+function fijarTipoMonedaPeso() {
+    const opciones = Array.from(selectTipoMoneda.options);
+    const opcionPeso = opciones.find((opcion) => {
+        const texto = opcion.textContent?.trim().toLowerCase() || '';
+        return texto.includes('peso argentino') || texto === 'peso' || texto === 'pes' || texto === 'ars' || texto.includes('peso');
+    }) ?? opciones[0];
+    if (opcionPeso) {
+        selectTipoMoneda.value = opcionPeso.value;
+    }
+    selectTipoMoneda.disabled = true;
+}
+function etiquetaListaPrecioSeleccionada() {
+    const opcion = selectListaPrecio.selectedOptions[0];
+    return opcion?.textContent?.trim() || '-';
+}
+function buscarOpcionListaPorNombre(nombreBuscado) {
+    const objetivo = nombreBuscado.trim().toLowerCase();
+    const opciones = Array.from(selectListaPrecio.options);
+    return (opciones.find((opcion) => (opcion.textContent?.trim().toLowerCase() || '') === objetivo) ??
+        opciones.find((opcion) => (opcion.textContent?.trim().toLowerCase() || '').includes(objetivo)) ??
+        null);
+}
+function seleccionarListaPrecioPorDefecto(listaPrecioId, listaPrecioDenominacion, esEmpresa = false) {
+    const anterior = selectListaPrecio.value;
+    let asignada = false;
+    if (listaPrecioId !== undefined && listaPrecioId !== null) {
+        const valor = String(listaPrecioId);
+        const existe = Array.from(selectListaPrecio.options).some((opcion) => opcion.value === valor);
+        if (existe) {
+            selectListaPrecio.value = valor;
+            asignada = true;
+        }
+    }
+    if (!asignada && listaPrecioDenominacion) {
+        const opcionPorNombre = buscarOpcionListaPorNombre(listaPrecioDenominacion);
+        if (opcionPorNombre) {
+            selectListaPrecio.value = opcionPorNombre.value;
+            asignada = true;
+        }
+    }
+    if (!asignada) {
+        const clavePorDefecto = esEmpresa ? 'mayorista' : 'minorista';
+        const opcionPorTipo = buscarOpcionListaPorNombre(clavePorDefecto) ?? selectListaPrecio.options[0] ?? null;
+        if (opcionPorTipo) {
+            selectListaPrecio.value = opcionPorTipo.value;
+        }
+    }
+    selectListaPrecio.disabled = false;
+    return selectListaPrecio.value !== anterior;
+}
+async function sincronizarItemsConListaSeleccionada(mostrarAviso = true) {
+    if (items.length === 0 || !selectListaPrecio.value)
+        return;
+    const listaId = Number(selectListaPrecio.value);
+    const codigosUnicos = Array.from(new Set(items.map((item) => item.articuloCodigo)));
+    const preciosNuevos = await catalogos.obtenerPreciosPorListaYCodigos(listaId, codigosUnicos);
+    const mapaPorCodigo = new Map();
+    for (const precio of preciosNuevos) {
+        mapaPorCodigo.set(precio.articuloCodigo, precio);
+    }
+    const actualizados = [];
+    const faltantes = [];
+    for (const item of items) {
+        const precioEncontrado = mapaPorCodigo.get(item.articuloCodigo);
+        if (precioEncontrado) {
+            actualizados.push({
+                ...item,
+                listaPrecioArticuloId: precioEncontrado.id,
+                listaPrecio: precioEncontrado.listaPrecio,
+                precioUnitario: precioEncontrado.precioVenta,
+            });
+        }
+        else {
+            faltantes.push(`${item.articuloCodigo} (${item.articuloDenominacion})`);
+        }
+    }
+    items = actualizados;
+    renderItems();
+    const nombreLista = etiquetaListaPrecioSeleccionada();
+    if (faltantes.length > 0) {
+        mostrarMensaje(`Se quitaron ítems sin precio en ${nombreLista}: ${faltantes.join(', ')}`, 'error');
+    }
+    else if (mostrarAviso) {
+        mostrarMensaje(`Precios actualizados según ${nombreLista}`, 'ok');
+    }
+}
+function limpiarResaltadoEdicion() {
+    facturasBody.querySelectorAll('tr.editando').forEach((fila) => {
+        fila.classList.remove('editando');
+    });
+}
 function fijarConsumidorFinal() {
     cliente = null;
     renderCliente();
@@ -293,6 +387,10 @@ function fijarConsumidorFinal() {
     }
     selectCondicionIva.disabled = true;
     actualizarTipoComprobante();
+    const cambioLista = seleccionarListaPrecioPorDefecto(undefined, 'Lista Minorista', false);
+    if (cambioLista && items.length > 0) {
+        void sincronizarItemsConListaSeleccionada(true).catch((error) => mostrarMensaje(mensajeDe(error), 'error'));
+    }
 }
 function crearInputItem(campo, indice, valor, atributos) {
     const input = document.createElement('input');
@@ -311,8 +409,8 @@ function renderItems() {
     itemsBody.replaceChildren();
     if (items.length === 0) {
         const fila = document.createElement('tr');
-        const celda = crearCelda('Todavía no hay ítems. Usá «Agregar ítems» para elegirlos de las listas de precios.');
-        celda.colSpan = 8;
+        const celda = crearCelda('Todavía no hay ítems. Usá «Agregar ítems» para elegirlos de la lista de precios seleccionada.');
+        celda.colSpan = 7;
         fila.append(celda);
         itemsBody.append(fila);
     }
@@ -328,7 +426,7 @@ function renderItems() {
         const celdaQuitar = document.createElement('td');
         celdaQuitar.append(quitar);
         const fila = document.createElement('tr');
-        fila.append(crearCelda(item.listaPrecio), crearCelda(item.articuloCodigo), crearCelda(item.articuloDenominacion), crearCelda(formatoMoneda.format(item.precioUnitario)), crearInputItem('cantidad', indice, item.cantidad, { min: '0.01', step: 'any', required: 'true' }), crearInputItem('porcentajeBonificacion', indice, item.porcentajeBonificacion, { min: '0', max: '100', step: 'any' }), subtotal, celdaQuitar);
+        fila.append(crearCelda(item.articuloCodigo), crearCelda(item.articuloDenominacion), crearCelda(formatoMoneda.format(item.precioUnitario)), crearInputItem('cantidad', indice, item.cantidad, { min: '0.01', step: 'any', required: 'true' }), crearInputItem('porcentajeBonificacion', indice, item.porcentajeBonificacion, { min: '0', max: '100', step: 'any' }), subtotal, celdaQuitar);
         itemsBody.append(fila);
     });
     actualizarTotales(true);
@@ -341,8 +439,13 @@ function reiniciarFormulario() {
     items = [];
     cliente = null;
     facturaEditandoId = null;
+    limpiarResaltadoEdicion();
+    seccionFormulario.classList.remove('modo-edicion');
+    tituloFormulario.textContent = 'Nueva factura';
+    botonGuardar.textContent = 'Guardar factura';
     campoFecha.value = hoy();
     fijarConsumidorFinal();
+    fijarTipoMonedaPeso();
     renderItems();
 }
 function abrirFormulario(titulo, editando = false) {
@@ -354,7 +457,6 @@ function abrirFormulario(titulo, editando = false) {
 }
 function cerrarFormulario() {
     seccionFormulario.hidden = true;
-    seccionFormulario.classList.remove('modo-edicion');
     reiniciarFormulario();
 }
 function nuevaFactura() {
@@ -378,13 +480,15 @@ async function editarFactura(id) {
         selectCondicionIva.disabled = cliente === null;
         actualizarTipoComprobante();
         selectPuntoVenta.value = String(factura.puntoVentaId);
-        selectTipoMoneda.value = String(factura.tipoMonedaId);
+        fijarTipoMonedaPeso();
         campoFecha.value = factura.fechaEmision;
-        campoCobrado.value = String(factura.importeCobrado);
         campoObservaciones.value = factura.observaciones ?? '';
         items = factura.detalles.map((detalle) => ({ ...detalle }));
+        const nombreListaDetalles = factura.detalles[0]?.listaPrecio;
+        seleccionarListaPrecioPorDefecto(factura.listaPrecioId ?? undefined, nombreListaDetalles ?? 'Lista Minorista', cliente !== null && esCondicionResponsableInscripto());
         renderItems();
         actualizarTotales(false);
+        campoCobrado.value = String(factura.importeCobrado);
         abrirFormulario(`EDITAR FACTURA — N° ${factura.numero}`, true);
         void cargarFacturas();
     }
@@ -400,6 +504,8 @@ async function elegirCliente() {
             denominacion: elegido.denominacion,
             condicionIvaId: elegido.condicionIvaId,
             condicionIvaDenominacion: elegido.condicionIvaDenominacion,
+            listaPrecioId: elegido.listaPrecioId,
+            listaPrecioDenominacion: elegido.listaPrecioDenominacion,
         };
         renderCliente();
         selectCondicionIva.disabled = false;
@@ -418,11 +524,12 @@ async function elegirCliente() {
                 }
             }
         }
-        if (!asignado) {
-            const esEmpresa = elegido.cuitCuil && elegido.cuitCuil.replace(/\D/g, '').startsWith('30');
+        const cuitDigitos = (elegido.cuitCuil || '').replace(/\D/g, '');
+        const esCuitEmpresa = cuitDigitos.startsWith('30') || cuitDigitos.startsWith('33') || cuitDigitos.startsWith('34');
+        if (!asignado && esCuitEmpresa) {
             for (const opcion of Array.from(selectCondicionIva.options)) {
                 const texto = opcion.textContent?.trim().toLowerCase() || '';
-                if (esEmpresa && texto.includes('responsable inscripto')) {
+                if (texto.includes('responsable inscripto')) {
                     selectCondicionIva.value = opcion.value;
                     asignado = true;
                     break;
@@ -430,12 +537,26 @@ async function elegirCliente() {
             }
         }
         actualizarTipoComprobante();
+        const esEmpresa = esCuitEmpresa || esCondicionResponsableInscripto();
+        const cambioLista = seleccionarListaPrecioPorDefecto(elegido.listaPrecioId, elegido.listaPrecioDenominacion, esEmpresa);
+        if (cambioLista && items.length > 0) {
+            try {
+                await sincronizarItemsConListaSeleccionada(true);
+            }
+            catch (error) {
+                mostrarMensaje(mensajeDe(error), 'error');
+            }
+        }
     }
 }
 async function agregarItems() {
+    if (!selectListaPrecio.value) {
+        mostrarMensaje('Seleccioná una lista de precios antes de agregar ítems', 'error');
+        return;
+    }
     const elegidos = await exploradorPrecios.abrir();
     for (const precio of elegidos) {
-        const existente = items.find((item) => item.listaPrecioArticuloId === precio.id);
+        const existente = items.find((item) => item.listaPrecioArticuloId === precio.id || item.articuloCodigo === precio.articuloCodigo);
         if (existente) {
             existente.cantidad += 1;
             continue;
@@ -560,6 +681,9 @@ async function anularFactura(id, estado, informada, numero) {
     try {
         const anulada = await facturas.actualizarEstado(id, 'ANULADA', motivo.trim() || undefined);
         mostrarMensaje(`Factura N° ${anulada.numeroFactura} anulada`, 'ok');
+        if (facturaEditandoId === id) {
+            cerrarFormulario();
+        }
         await cargarFacturas();
     }
     catch (error) {
@@ -572,6 +696,9 @@ async function eliminarFactura(id) {
     try {
         await facturas.eliminarFactura(id);
         mostrarMensaje('Factura eliminada', 'ok');
+        if (facturaEditandoId === id) {
+            cerrarFormulario();
+        }
         await cargarFacturas();
     }
     catch (error) {
@@ -602,6 +729,9 @@ function inicializar() {
     });
     selectCondicionIva.addEventListener('change', () => {
         actualizarTipoComprobante();
+    });
+    selectListaPrecio.addEventListener('change', () => {
+        void sincronizarItemsConListaSeleccionada(true).catch((error) => mostrarMensaje(mensajeDe(error), 'error'));
     });
     porId('btn-cancelar-formulario').addEventListener('click', cerrarFormulario);
     porId('btn-buscar-cliente').addEventListener('click', () => void elegirCliente());

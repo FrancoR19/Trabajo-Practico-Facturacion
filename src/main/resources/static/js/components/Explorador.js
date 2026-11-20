@@ -9,6 +9,7 @@ export class Explorador {
     constructor(config) {
         this.config = config;
         this.dialogo = crearElemento('dialog', '', 'explorador');
+        this.campoSubtitulo = crearElemento('p', '', 'barra-subtitulo');
         this.campoTexto = crearElemento('input');
         this.campoSelector = crearElemento('select');
         this.cuerpo = crearElemento('tbody');
@@ -28,6 +29,13 @@ export class Explorador {
         this.campoTexto.value = '';
         this.pagina = 0;
         this.prepararSelector();
+        if (this.config.subtitulo) {
+            this.campoSubtitulo.textContent = this.config.subtitulo();
+            this.campoSubtitulo.hidden = false;
+        }
+        else {
+            this.campoSubtitulo.hidden = true;
+        }
         this.actualizarConfirmar();
         const resultado = new Promise((resolver) => {
             this.resolver = resolver;
@@ -93,7 +101,8 @@ export class Explorador {
             pie.append(this.confirmar);
         pie.append(cancelar);
         this.error.hidden = true;
-        this.dialogo.append(crearElemento('h3', this.config.titulo), barra, grupoSelector, this.error, contenedorTabla, paginacion, pie);
+        this.campoSubtitulo.hidden = true;
+        this.dialogo.append(crearElemento('h3', this.config.titulo), this.campoSubtitulo, barra, grupoSelector, this.error, contenedorTabla, paginacion, pie);
         this.dialogo.addEventListener('close', () => this.terminar([]));
         document.body.append(this.dialogo);
     }

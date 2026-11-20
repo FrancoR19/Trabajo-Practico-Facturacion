@@ -21,8 +21,8 @@ import jakarta.persistence.Table;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-@EqualsAndHashCode(callSuper = true)
-@ToString(callSuper = true)
+@EqualsAndHashCode(callSuper = true, exclude = {"condicionIva", "listaPrecio"})
+@ToString(callSuper = true, exclude = {"condicionIva", "listaPrecio"})
 public class Cliente extends AuditoriaApp {
 
     @Column(nullable = false, unique = true)
@@ -42,4 +42,8 @@ public class Cliente extends AuditoriaApp {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "condicion_iva_id")
     private CondicionIva condicionIva;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "lista_precio_id")
+    private ListaPrecio listaPrecio;
 }

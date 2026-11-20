@@ -6,6 +6,7 @@ import com.facturacion.api.dto.ListaPrecioArticuloDTO;
 import com.facturacion.api.dto.PaginaDTO;
 import com.facturacion.api.repository.CondicionIvaRepository;
 import com.facturacion.api.repository.ExploradorRepository;
+import com.facturacion.api.repository.ListaPrecioArticuloRepository;
 import com.facturacion.api.repository.ListaPrecioRepository;
 import com.facturacion.api.repository.PuntoVentaRepository;
 import com.facturacion.api.repository.TipoMonedaRepository;
@@ -23,17 +24,20 @@ public class CatalogoService {
     private final CondicionIvaRepository condicionIvaRepository;
     private final TipoMonedaRepository tipoMonedaRepository;
     private final ListaPrecioRepository listaPrecioRepository;
+    private final ListaPrecioArticuloRepository listaPrecioArticuloRepository;
 
     public CatalogoService(ExploradorRepository exploradorRepository,
                            PuntoVentaRepository puntoVentaRepository,
                            CondicionIvaRepository condicionIvaRepository,
                            TipoMonedaRepository tipoMonedaRepository,
-                           ListaPrecioRepository listaPrecioRepository) {
+                           ListaPrecioRepository listaPrecioRepository,
+                           ListaPrecioArticuloRepository listaPrecioArticuloRepository) {
         this.exploradorRepository = exploradorRepository;
         this.puntoVentaRepository = puntoVentaRepository;
         this.condicionIvaRepository = condicionIvaRepository;
         this.tipoMonedaRepository = tipoMonedaRepository;
         this.listaPrecioRepository = listaPrecioRepository;
+        this.listaPrecioArticuloRepository = listaPrecioArticuloRepository;
     }
 
     public PaginaDTO<ClienteDTO> clientes(String texto, int pagina, int tamanio) {
@@ -48,6 +52,13 @@ public class CatalogoService {
     public PaginaDTO<ListaPrecioArticuloDTO> listasPrecioArticulo(Long listaPrecioId, String texto, int pagina, int tamanio) {
         return exploradorRepository.listasPrecioArticulo(listaPrecioId, texto,
                 PaginaDTO.normalizarPagina(pagina), PaginaDTO.normalizarTamanio(tamanio));
+    }
+
+    public List<ListaPrecioArticuloDTO> preciosPorListaYCodigos(Long listaPrecioId, List<String> codigos) {
+        if (listaPrecioId == null || codigos == null || codigos.isEmpty()) {
+            return List.of();
+        }
+        return listaPrecioArticuloRepository.buscarPorListaYCodigos(listaPrecioId, codigos);
     }
 
     public List<CatalogoItemDTO> listasPrecios() {

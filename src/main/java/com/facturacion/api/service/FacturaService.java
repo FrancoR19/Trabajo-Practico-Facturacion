@@ -107,9 +107,13 @@ public class FacturaService {
         FacturaVenta factura = buscarFactura(id);
         Cliente cliente = factura.getCliente();
 
+        Long listaPrecioId = null;
         List<FacturaEdicionDetalleDTO> detalles = new ArrayList<>();
         for (FacturaVentaDetalle detalle : factura.getDetalles()) {
             ListaPrecioArticulo precio = detalle.getListaPrecioArticulo();
+            if (listaPrecioId == null && precio.getListaPrecio() != null) {
+                listaPrecioId = precio.getListaPrecio().getId();
+            }
             detalles.add(new FacturaEdicionDetalleDTO(
                     precio.getId(),
                     precio.getListaPrecio().getDenominacion(),
@@ -118,6 +122,9 @@ public class FacturaService {
                     precio.getPrecioVenta(),
                     detalle.getCantidad(),
                     detalle.getPorcentajeBonificacion()));
+        }
+        if (listaPrecioId == null && cliente != null && cliente.getListaPrecio() != null) {
+            listaPrecioId = cliente.getListaPrecio().getId();
         }
 
         return new FacturaEdicionDTO(
@@ -129,6 +136,7 @@ public class FacturaService {
                 factura.getCondicionIva().getId(),
                 factura.getPuntoVenta().getId(),
                 factura.getTipoMoneda().getId(),
+                listaPrecioId,
                 factura.getImporteCobrado(),
                 factura.getObservaciones(),
                 factura.getEstado().name(),
@@ -447,9 +455,17 @@ public class FacturaService {
     private void cargarDetalles(FacturaVenta factura, List<FacturaDetalleRequestDTO> detalles) {
         BigDecimal alicuotaBd = BigDecimal.valueOf(ivaAlicuota);
         BigDecimal cien = BigDecimal.valueOf(100);
+        Long listaPrecioIdComun = null;
 
         for (FacturaDetalleRequestDTO dto : detalles) {
             ListaPrecioArticulo precio = resolverPrecio(dto);
+            Long listaActualId = precio.getListaPrecio() != null ? precio.getListaPrecio().getId() : null;
+            if (listaPrecioIdComun == null) {
+                listaPrecioIdComun = listaActualId;
+            } else if (!listaPrecioIdComun.equals(listaActualId)) {
+                throw new IllegalArgumentException(
+                        "Todos los ítems de la factura deben pertenecer a la misma lista de precios");
+            }
             BigDecimal cantidadBd = BigDecimal.valueOf(dto.getCantidad());
             BigDecimal bonificacionBd = dto.getPorcentajeBonificacion() != null
                     ? BigDecimal.valueOf(dto.getPorcentajeBonificacion())

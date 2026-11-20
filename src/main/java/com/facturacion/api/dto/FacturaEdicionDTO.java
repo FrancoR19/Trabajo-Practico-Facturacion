@@ -14,6 +14,7 @@ public record FacturaEdicionDTO(
         Long condicionIvaId,
         Long puntoVentaId,
         Long tipoMonedaId,
+        Long listaPrecioId,
         double importeCobrado,
         @Size(max = 500, message = "Las observaciones no pueden superar los 500 caracteres")
         String observaciones,

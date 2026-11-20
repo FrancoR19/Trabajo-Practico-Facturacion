@@ -30,6 +30,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -147,7 +148,7 @@ public class DataSeeder implements CommandLineRunner {
         List<Rubro> rubros = asegurarRubros(jperez);
         List<Marca> marcas = asegurarMarcas(jperez);
 
-        List<Cliente> clientes = asegurarClientes(jperez, responsable, consumidorFinal);
+        List<Cliente> clientes = asegurarClientes(jperez, responsable, consumidorFinal, minorista, mayorista);
         Map<String, Double> preciosBase = new HashMap<>();
         List<Articulo> articulos = asegurarArticulos(jperez, rubros, marcas, preciosBase);
 
@@ -304,14 +305,23 @@ public class DataSeeder implements CommandLineRunner {
         return marcas;
     }
 
-    private List<Cliente> asegurarClientes(Usuario usuario, CondicionIva responsable, CondicionIva consumidorFinal) {
+    private List<Cliente> asegurarClientes(Usuario usuario, CondicionIva responsable, CondicionIva consumidorFinal,
+                                           ListaPrecio minorista, ListaPrecio mayorista) {
         List<Cliente> existentes = em.createQuery("SELECT c FROM Cliente c ORDER BY c.id", Cliente.class)
                 .getResultList();
 
         for (Cliente c : existentes) {
+            boolean modificado = false;
             if (c.getCondicionIva() == null) {
-                boolean esEmpresa = c.getCuitCuil() != null && c.getCuitCuil().startsWith("30");
+                boolean esEmpresa = esClienteComercial(c);
                 c.setCondicionIva(esEmpresa ? responsable : consumidorFinal);
+                modificado = true;
+            }
+            if (c.getListaPrecio() == null) {
+                c.setListaPrecio(esClienteComercial(c) ? mayorista : minorista);
+                modificado = true;
+            }
+            if (modificado) {
                 em.merge(c);
             }
         }
@@ -377,11 +387,29 @@ public class DataSeeder implements CommandLineRunner {
             String numeroCalle = String.valueOf(100 + (indice * 37) % 4500);
 
             CondicionIva condIva = esEmpresa ? responsable : consumidorFinal;
-            resultado.add(crearCliente(usuario, cuit, denominacion, email, calle, numeroCalle, condIva));
+            ListaPrecio listaPorDefecto = esEmpresa ? mayorista : minorista;
+            resultado.add(crearCliente(usuario, cuit, denominacion, email, calle, numeroCalle, condIva, listaPorDefecto));
             indice++;
         }
 
         return resultado;
+    }
+
+    private boolean esClienteComercial(Cliente cliente) {
+        if (cliente.getCondicionIva() != null && cliente.getCondicionIva().getCodigoAfip() == 1) {
+            return true;
+        }
+        String cuitDigitos = cliente.getCuitCuil() != null
+                ? cliente.getCuitCuil().replaceAll("\\D", "")
+                : "";
+        if (cuitDigitos.startsWith("30") || cuitDigitos.startsWith("33") || cuitDigitos.startsWith("34")) {
+            return true;
+        }
+        String denom = cliente.getDenominacion() != null
+                ? cliente.getDenominacion().toLowerCase(Locale.ROOT)
+                : "";
+        return denom.contains("s.r.l.") || denom.contains("s.a.") || denom.contains("s.a.s.")
+                || denom.contains(" srl") || denom.contains(" sa");
     }
 
     private String generarCuitValido(String prefijo, long dniBase) {
@@ -546,7 +574,8 @@ public class DataSeeder implements CommandLineRunner {
     }
 
     private Cliente crearCliente(Usuario usuario, String cuit, String denominacion, String email,
-                                 String calle, String numeroCalle, CondicionIva condicionIva) {
+                                 String calle, String numeroCalle, CondicionIva condicionIva,
+                                 ListaPrecio listaPrecio) {
         Contacto contacto = new Contacto();
         contacto.setEmail(email);
         em.persist(contacto);
@@ -562,6 +591,7 @@ public class DataSeeder implements CommandLineRunner {
         cliente.setContacto(contacto);
         cliente.setDomicilio(domicilio);
         cliente.setCondicionIva(condicionIva);
+        cliente.setListaPrecio(listaPrecio);
         return auditar(cliente, usuario);
     }
 

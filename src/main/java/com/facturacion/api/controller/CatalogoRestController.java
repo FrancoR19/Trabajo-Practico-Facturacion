@@ -39,6 +39,13 @@ public class CatalogoRestController {
         return catalogoService.listasPrecioArticulo(listaPrecioId, texto, page, size);
     }
 
+    @GetMapping("/lista-precio-articulos/por-codigos")
+    public List<ListaPrecioArticuloDTO> preciosPorListaYCodigos(
+            @RequestParam Long listaPrecioId,
+            @RequestParam List<String> codigos) {
+        return catalogoService.preciosPorListaYCodigos(listaPrecioId, codigos);
+    }
+
     @GetMapping("/catalogos/listas-precios")
     public List<CatalogoItemDTO> listasPrecios() {
         return catalogoService.listasPrecios();
